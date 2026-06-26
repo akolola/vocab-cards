@@ -1,83 +1,173 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
     android:background="@color/background">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Vocab Cards"
-        android:textSize="32sp"
-        android:textStyle="bold"
-        android:textColor="@color/text_primary"
-        android:layout_marginBottom="8dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="German - Russian flashcards"
-        android:textSize="14sp"
-        android:textColor="@color/text_secondary"
-        android:layout_marginBottom="40dp" />
-
-    <Button
-        android:id="@+id/btnPickFile"
+    <!-- Tab bar -->
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tabLayout"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="Open different file…"
-        android:textSize="16sp"
-        style="@style/Widget.Material3.Button.OutlinedButton" />
-
-    <ProgressBar
-        android:id="@+id/progressBar"
-        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:visibility="gone" />
+        app:tabGravity="fill"
+        app:tabMode="fixed" />
 
-    <TextView
-        android:id="@+id/tvStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="32dp"
+    <!-- ===== TAB 0: ADD WORD (default) ===== -->
+    <LinearLayout
+        android:id="@+id/tabAddWord"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Quick add to Zwischenablage"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_primary"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Language is detected automatically"
+            android:textSize="13sp"
+            android:textColor="@color/text_secondary"
+            android:layout_marginBottom="20dp" />
+
+        <EditText
+            android:id="@+id/etWord"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Word or phrase…"
+            android:textSize="22sp"
+            android:inputType="textCapSentences"
+            android:padding="16dp"
+            android:background="@color/card_word_bg"
+            android:layout_marginBottom="14dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="28dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Detected: "
+                android:textSize="15sp"
+                android:textColor="@color/text_secondary" />
+
+            <TextView
+                android:id="@+id/tvLangDetected"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="—"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary" />
+
+            <TextView
+                android:id="@+id/tvColTarget"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="15sp"
+                android:textColor="@color/text_secondary"
+                android:layout_marginStart="8dp" />
+
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnSaveWord"
+            android:layout_width="match_parent"
+            android:layout_height="72dp"
+            android:text="Save to Zwischenablage"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:enabled="false" />
+
+        <TextView
+            android:id="@+id/tvSaveStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textSize="14sp"
+            android:textColor="@color/badge_neu" />
+
+    </LinearLayout>
+
+    <!-- ===== TAB 1: STUDY ===== -->
+    <LinearLayout
+        android:id="@+id/tabStudy"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
         android:gravity="center"
-        android:textSize="15sp"
-        android:textColor="@color/text_secondary"
-        android:text="Pick an Excel file with a sheet named Fokus" />
+        android:padding="32dp"
+        android:visibility="gone">
 
-    <Button
-        android:id="@+id/btnStartAll"
-        android:layout_width="match_parent"
-        android:layout_height="80dp"
-        android:text="Start all"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="16dp"
-        android:visibility="gone" />
+        <ProgressBar
+            android:id="@+id/progressBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone" />
 
-    <Button
-        android:id="@+id/btnStartWrong"
-        android:layout_width="match_parent"
-        android:layout_height="80dp"
-        android:text="Review wrong"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        style="@style/Widget.Material3.Button.TonalButton"
-        android:layout_marginBottom="8dp"
-        android:visibility="gone" />
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="32dp"
+            android:gravity="center"
+            android:textSize="14sp"
+            android:textColor="@color/text_secondary"
+            android:text="Pick an Excel file with a sheet named Fokus" />
 
-    <Button
-        android:id="@+id/btnClearWrong"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Clear wrong list"
-        android:textSize="15sp"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:visibility="gone" />
+        <Button
+            android:id="@+id/btnStartAll"
+            android:layout_width="match_parent"
+            android:layout_height="80dp"
+            android:text="Start all"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnStartWrong"
+            android:layout_width="match_parent"
+            android:layout_height="80dp"
+            android:text="Review wrong"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnClearWrong"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Clear wrong list"
+            android:textSize="15sp"
+            android:layout_marginBottom="24dp"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnPickFile"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="Open different file…"
+            android:textSize="16sp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+
+    </LinearLayout>
 
 </LinearLayout>
