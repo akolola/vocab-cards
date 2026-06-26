@@ -17,6 +17,24 @@ object ExcelWriter {
         return cyrillic > latin
     }
 
+    /** Returns all sheet names found in the workbook — for diagnostics. */
+    fun listSheetNames(fileBytes: ByteArray): List<String> {
+        return try {
+            val entries = readZip(fileBytes)
+            val wb = entries["xl/workbook.xml"] ?: return listOf("workbook.xml missing")
+            val parser = Xml.newPullParser()
+            parser.setInput(ByteArrayInputStream(wb), "UTF-8")
+            val names = mutableListOf<String>()
+            var ev = parser.eventType
+            while (ev != XmlPullParser.END_DOCUMENT) {
+                if (ev == XmlPullParser.START_TAG && parser.name == "sheet")
+                    parser.getAttributeValue(null, "name")?.let { names.add(it) }
+                ev = parser.next()
+            }
+            names
+        } catch (e: Exception) { listOf("error: ${e.message}") }
+    }
+
     /**
      * Appends [word] to the Zwischenablage sheet, inserting it just before
      * the "Alt" section header so it stays inside the Neu area.
@@ -54,14 +72,20 @@ object ExcelWriter {
                 when {
                     "</sheetData>" in xml  -> xml.replace("</sheetData>", "$newRow</sheetData>")
                     "<sheetData/>" in xml  -> xml.replace("<sheetData/>", "<sheetData>$newRow</sheetData>")
-                    else                   -> return null
+                    // Sheet XML doesn't have a sheetData element — wrap one in
+                    "</worksheet>" in xml  -> xml.replace("</worksheet>",
+                        "<sheetData>$newRow</sheetData></worksheet>")
+                    else                   -> xml + "<sheetData>$newRow</sheetData>"
                 }
             }
 
             val updated = entries.toMutableMap()
             updated[path] = modified.toByteArray(Charsets.UTF_8)
             writeZip(updated)
-        } catch (_: Exception) { null }
+        } catch (e: Exception) {
+            android.util.Log.e("ExcelWriter", "appendWord failed", e)
+            null
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

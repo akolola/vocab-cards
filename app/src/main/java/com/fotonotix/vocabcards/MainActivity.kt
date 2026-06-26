@@ -3,6 +3,7 @@ package com.fotonotix.vocabcards
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.TextWatcher
@@ -16,26 +17,47 @@ import com.fotonotix.vocabcards.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.FileOutputStream
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var loadedCards: List<VocabCard> = emptyList()
 
+    // File picker for the Study tab (read + write)
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            try {
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            } catch (_: Exception) {}
-            val name = resolveFileName(uri)
-            WrongCardStore.saveLastFile(this, uri, name)
+            grantAndSave(uri)
             loadFile(uri)
         }
+    }
+
+    // File picker for the Add Word tab — only needs write access granted
+    private val filePickerForAdd = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            grantAndSave(uri)
+            val name = WrongCardStore.loadLastFileName(this)
+            binding.tvSelectedFileName.text = name.ifBlank { uri.lastPathSegment ?: "file" }
+            binding.btnSaveWord.isEnabled =
+                binding.etWord.text?.toString()?.trim()?.isNotEmpty() == true
+            binding.tvSaveStatus.text = "File ready — you can now save words."
+        }
+    }
+
+    private fun grantAndSave(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (_: Exception) {}
+        val name = resolveFileName(uri)
+        WrongCardStore.saveLastFile(this, uri, name)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,6 +111,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupAddWordTab() {
+        // Show saved file name if already available
+        val savedName = WrongCardStore.loadLastFileName(this)
+        binding.tvSelectedFileName.text =
+            if (savedName.isNotBlank()) savedName else "No file selected"
+
+        binding.btnSelectFileForAdd.setOnClickListener {
+            filePickerForAdd.launch(arrayOf(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-excel",
+                "*/*"
+            ))
+        }
+
         binding.etWord.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
                 val text = s?.toString()?.trim() ?: ""
@@ -116,35 +151,62 @@ class MainActivity : AppCompatActivity() {
         val word = binding.etWord.text?.toString()?.trim() ?: return
         if (word.isEmpty()) return
         val uri = WrongCardStore.loadLastFileUri(this) ?: run {
-            binding.tvSaveStatus.text = "No file loaded — open a file in the Study tab first."
+            binding.tvSaveStatus.text = "No file selected — tap 'Select file' above."
             return
         }
         val russian = ExcelWriter.isRussian(word)
 
         binding.btnSaveWord.isEnabled = false
-        binding.tvSaveStatus.text = "Saving…"
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val bytes    = contentResolver.openInputStream(uri)!!.readBytes()
+                // Step 1: read file bytes
+                status("Reading file…")
+                val bytes = contentResolver.openInputStream(uri)
+                    ?.readBytes()
+                    ?: throw IOException("Could not open file for reading")
+                status("Read ${bytes.size} bytes. Modifying…")
+
+                // Step 2: modify xlsx in memory
                 val modified = ExcelWriter.appendWord(bytes, word, russian)
-                    ?: throw IllegalStateException("Sheet 'Zwischenablage' not found in file")
+                if (modified == null) {
+                    val sheets = ExcelWriter.listSheetNames(bytes)
+                    status("Sheet 'Zwischenablage' not found.\nFound sheets: $sheets")
+                    withContext(Dispatchers.Main) { binding.btnSaveWord.isEnabled = true }
+                    return@launch
+                }
+                status("Modified (${modified.size} bytes). Writing…")
 
-                contentResolver.openOutputStream(uri, "wt")!!.use { it.write(modified) }
+                // Step 3: write back via ParcelFileDescriptor (more reliable than openOutputStream for SAF)
+                val pfd: ParcelFileDescriptor = contentResolver.openFileDescriptor(uri, "rwt")
+                    ?: throw IOException("openFileDescriptor returned null — no write permission?")
+                FileOutputStream(pfd.fileDescriptor).use { fos ->
+                    fos.write(modified)
+                    fos.flush()
+                }
+                pfd.close()
 
+                // Step 4: verify by re-reading size
+                val verify = contentResolver.openInputStream(uri)?.use { it.available() } ?: -1
+                val col = if (russian) "col C (Russian)" else "col B (German)"
+                status("Saved! \"$word\" -> $col  [verified: $verify bytes]")
                 withContext(Dispatchers.Main) {
-                    val col = if (russian) "column C (Russian)" else "column B (German)"
-                    binding.tvSaveStatus.text = "Saved \"$word\" to $col"
                     binding.etWord.text?.clear()
                     binding.btnSaveWord.isEnabled = false
                 }
+
+            } catch (e: SecurityException) {
+                status("Permission denied — tap 'Select file' and pick the file again.\n${e.message}")
+                withContext(Dispatchers.Main) { binding.btnSaveWord.isEnabled = true }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    binding.tvSaveStatus.text = "Error: ${e.message}"
-                    binding.btnSaveWord.isEnabled = true
-                }
+                status("Error (${e.javaClass.simpleName}): ${e.message}")
+                withContext(Dispatchers.Main) { binding.btnSaveWord.isEnabled = true }
             }
         }
+    }
+
+    private suspend fun status(msg: String) = withContext(Dispatchers.Main) {
+        binding.tvSaveStatus.text = msg
     }
 
     private fun resolveFileName(uri: Uri): String {
