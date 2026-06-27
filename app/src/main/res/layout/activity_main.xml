@@ -22,14 +22,47 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Title + export button on same row -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Quick add to Zwischenablage"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:textColor="@color/text_primary"
-            android:layout_marginBottom="6dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Clipboard"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:id="@+id/tvWordCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0 words saved"
+                    android:textSize="13sp"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnExport"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="Export xlsx"
+                android:textSize="14sp"
+                style="@style/Widget.Material3.Button.OutlinedButton" />
+
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
@@ -38,36 +71,6 @@
             android:textSize="13sp"
             android:textColor="@color/text_secondary"
             android:layout_marginBottom="16dp" />
-
-        <!-- File selector for write access -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="16dp">
-
-            <Button
-                android:id="@+id/btnSelectFileForAdd"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:text="Select file"
-                android:textSize="14sp"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_marginEnd="12dp" />
-
-            <TextView
-                android:id="@+id/tvSelectedFileName"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="No file selected"
-                android:textSize="13sp"
-                android:textColor="@color/text_secondary"
-                android:ellipsize="middle"
-                android:singleLine="true" />
-
-        </LinearLayout>
 
         <EditText
             android:id="@+id/etWord"
@@ -117,7 +120,7 @@
             android:id="@+id/btnSaveWord"
             android:layout_width="match_parent"
             android:layout_height="72dp"
-            android:text="Save to Zwischenablage"
+            android:text="Save word"
             android:textSize="20sp"
             android:textStyle="bold"
             android:enabled="false" />

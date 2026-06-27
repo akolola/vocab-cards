@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.text.Editable
@@ -20,10 +19,10 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.tabs.TabLayout
 import com.fotonotix.vocabcards.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
-import java.io.FileOutputStream
 import java.io.IOException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -33,27 +32,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var loadedCards: List<VocabCard> = emptyList()
 
-    // File picker for the Study tab (read + write)
+    private val db by lazy { ClipboardDatabase.get(this) }
+
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             grantAndSave(uri)
             loadFile(uri)
-        }
-    }
-
-    // File picker for the Add Word tab — only needs write access granted
-    private val filePickerForAdd = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            grantAndSave(uri)
-            val name = WrongCardStore.loadLastFileName(this)
-            binding.tvSelectedFileName.text = name.ifBlank { uri.lastPathSegment ?: "file" }
-            binding.btnSaveWord.isEnabled =
-                binding.etWord.text?.toString()?.trim()?.isNotEmpty() == true
-            binding.tvSaveStatus.text = "File ready — you can now save words."
         }
     }
 
@@ -64,8 +50,7 @@ class MainActivity : AppCompatActivity() {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
         } catch (_: Exception) {}
-        val name = resolveFileName(uri)
-        WrongCardStore.saveLastFile(this, uri, name)
+        WrongCardStore.saveLastFile(this, uri, resolveFileName(uri))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,8 +72,7 @@ class MainActivity : AppCompatActivity() {
         val lastUri = WrongCardStore.loadLastFileUri(this)
         if (lastUri != null) {
             val name = WrongCardStore.loadLastFileName(this)
-            binding.tvStatus.text =
-                "Loading ${if (name.isNotBlank()) name else "last file"}…"
+            binding.tvStatus.text = "Loading ${if (name.isNotBlank()) name else "last file"}…"
             loadFile(lastUri, onFailure = {
                 binding.tvStatus.text = "Could not reopen last file. Please pick it again."
                 WrongCardStore.clearLastFile(this)
@@ -102,7 +86,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupTabs() {
-        binding.tabLayout.addTab(binding.tabLayout.newTab().setText("Add Word"))
+        binding.tabLayout.addTab(binding.tabLayout.newTab().setText("Clipboard"))
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText("Study"))
 
         binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
@@ -119,17 +103,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupAddWordTab() {
-        // Show saved file name if already available
-        val savedName = WrongCardStore.loadLastFileName(this)
-        binding.tvSelectedFileName.text =
-            if (savedName.isNotBlank()) savedName else "No file selected"
-
-        binding.btnSelectFileForAdd.setOnClickListener {
-            filePickerForAdd.launch(arrayOf(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "application/vnd.ms-excel",
-                "*/*"
-            ))
+        // Live word count from DB
+        lifecycleScope.launch {
+            db.dao().countFlow().collectLatest { count ->
+                binding.tvWordCount.text = "$count word${if (count == 1) "" else "s"} saved"
+            }
         }
 
         binding.etWord.addTextChangedListener(object : TextWatcher {
@@ -142,9 +120,8 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     val russian = ExcelWriter.isRussian(text)
                     binding.tvLangDetected.text = if (russian) "Russian" else "German"
-                    binding.tvColTarget.text    = if (russian) "→ column C" else "→ column B"
-                    binding.btnSaveWord.isEnabled =
-                        WrongCardStore.loadLastFileUri(this@MainActivity) != null
+                    binding.tvColTarget.text    = if (russian) "→ col C" else "→ col B"
+                    binding.btnSaveWord.isEnabled = true
                 }
                 binding.tvSaveStatus.text = ""
             }
@@ -153,41 +130,60 @@ class MainActivity : AppCompatActivity() {
         })
 
         binding.btnSaveWord.setOnClickListener { saveWord() }
+        binding.btnExport.setOnClickListener { exportToDownloads() }
     }
 
-    // ── TEST MODE: write a fresh minimal xlsx directly to Downloads/Wortschatz.xlsx ──
-    // (ExcelWriter / SAF logic temporarily disabled to prove write path works)
     private fun saveWord() {
         val word = binding.etWord.text?.toString()?.trim() ?: return
         if (word.isEmpty()) return
+        val russian = ExcelWriter.isRussian(word)
         binding.btnSaveWord.isEnabled = false
-
         lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                status("Building xlsx…")
-                val xlsx = buildMinimalXlsx(word)
-
-                status("Writing ${xlsx.size} bytes to Downloads/VocabCards_test.xlsx…")
-                writeToDownloads(xlsx, "VocabCards_test.xlsx")
-
-                status("Done! Open Downloads on your phone and check VocabCards_test.xlsx — cell A1 should contain: \"$word\"")
-                withContext(Dispatchers.Main) { binding.etWord.text?.clear() }
-            } catch (e: Exception) {
-                status("Error (${e.javaClass.simpleName}): ${e.message}")
-            } finally {
-                withContext(Dispatchers.Main) { binding.btnSaveWord.isEnabled = true }
+            db.dao().insert(ClipboardWord(text = word, isRussian = russian))
+            withContext(Dispatchers.Main) {
+                binding.tvSaveStatus.text = "Saved: \"$word\""
+                binding.etWord.text?.clear()
+                binding.btnSaveWord.isEnabled = false
             }
         }
     }
 
-    private fun buildMinimalXlsx(word: String): ByteArray {
-        val escaped = word.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    private fun exportToDownloads() {
+        binding.btnExport.isEnabled = false
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val words = db.dao().getAll()
+                if (words.isEmpty()) {
+                    status("Nothing to export — save some words first.")
+                    return@launch
+                }
+                status("Building Clipboard.xlsx (${words.size} words)…")
+                val xlsx = buildClipboardXlsx(words)
+                status("Writing to Downloads…")
+                writeToDownloads(xlsx, "Clipboard.xlsx")
+                status("Exported ${words.size} words to Downloads/Clipboard.xlsx")
+            } catch (e: Exception) {
+                status("Export error (${e.javaClass.simpleName}): ${e.message}")
+            } finally {
+                withContext(Dispatchers.Main) { binding.btnExport.isEnabled = true }
+            }
+        }
+    }
+
+    private fun buildClipboardXlsx(words: List<ClipboardWord>): ByteArray {
+        val rows = StringBuilder()
+        words.forEachIndexed { i, w ->
+            val row = i + 1
+            val col = if (w.isRussian) "C" else "B"
+            val escaped = w.text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            rows.append("""<row r="$row"><c r="$col$row" t="inlineStr"><is><t>$escaped</t></is></c></row>""")
+        }
         val entries = linkedMapOf(
             "[Content_Types].xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>""",
             "_rels/.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""",
-            "xl/workbook.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>""",
+            "xl/workbook.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Clipboard" sheetId="1" r:id="rId1"/></sheets></workbook>""",
             "xl/_rels/workbook.xml.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>""",
-            "xl/worksheets/sheet1.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>$escaped</t></is></c></row></sheetData></worksheet>"""
+            "xl/worksheets/sheet1.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>$rows</sheetData></worksheet>"""
         )
         val baos = ByteArrayOutputStream()
         val zos = ZipOutputStream(baos)
@@ -201,20 +197,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun writeToDownloads(data: ByteArray, fileName: String) {
+        val mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             val resolver = contentResolver
-
-            // Find existing entry our app owns (so we overwrite instead of creating duplicates)
             var existingId: Long? = null
             resolver.query(
                 MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                 arrayOf(MediaStore.MediaColumns._ID),
                 "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
                 arrayOf(fileName), null
-            )?.use { c ->
-                if (c.moveToFirst()) existingId = c.getLong(0)
-            }
+            )?.use { c -> if (c.moveToFirst()) existingId = c.getLong(0) }
 
             val uri = if (existingId != null) {
                 ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, existingId!!)
@@ -227,11 +219,9 @@ class MainActivity : AppCompatActivity() {
                 resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                     ?: throw IOException("MediaStore.insert returned null")
             }
-
             resolver.openOutputStream(uri, "wt")?.use { it.write(data) }
-                ?: throw IOException("openOutputStream returned null for $uri")
+                ?: throw IOException("openOutputStream returned null")
         } else {
-            // Android 9 and below — direct file I/O (WRITE_EXTERNAL_STORAGE permission covers this)
             val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             java.io.File(dir, fileName).writeBytes(data)
         }
@@ -277,9 +267,6 @@ class MainActivity : AppCompatActivity() {
                     binding.tvStatus.text =
                         if (name.isNotBlank()) "$name  ·  ${cards.size} cards"
                         else "${cards.size} cards loaded"
-
-                    val wordTyped = binding.etWord.text?.toString()?.trim() ?: ""
-                    if (wordTyped.isNotEmpty()) binding.btnSaveWord.isEnabled = true
 
                     updateStartButtons()
                 }
