@@ -1,9 +1,14 @@
 package com.fotonotix.vocabcards
 
+import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.TextWatcher
@@ -17,8 +22,11 @@ import com.fotonotix.vocabcards.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -147,61 +155,85 @@ class MainActivity : AppCompatActivity() {
         binding.btnSaveWord.setOnClickListener { saveWord() }
     }
 
+    // ── TEST MODE: write a fresh minimal xlsx directly to Downloads/Wortschatz.xlsx ──
+    // (ExcelWriter / SAF logic temporarily disabled to prove write path works)
     private fun saveWord() {
         val word = binding.etWord.text?.toString()?.trim() ?: return
         if (word.isEmpty()) return
-        val uri = WrongCardStore.loadLastFileUri(this) ?: run {
-            binding.tvSaveStatus.text = "No file selected — tap 'Select file' above."
-            return
-        }
-        val russian = ExcelWriter.isRussian(word)
-
         binding.btnSaveWord.isEnabled = false
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // Step 1: read file bytes
-                status("Reading file…")
-                val bytes = contentResolver.openInputStream(uri)
-                    ?.readBytes()
-                    ?: throw IOException("Could not open file for reading")
-                status("Read ${bytes.size} bytes. Modifying…")
+                status("Building xlsx…")
+                val xlsx = buildMinimalXlsx(word)
 
-                // Step 2: modify xlsx in memory
-                val modified = ExcelWriter.appendWord(bytes, word, russian)
-                if (modified == null) {
-                    val sheets = ExcelWriter.listSheetNames(bytes)
-                    status("Sheet 'Zwischenablage' not found.\nFound sheets: $sheets")
-                    withContext(Dispatchers.Main) { binding.btnSaveWord.isEnabled = true }
-                    return@launch
-                }
-                status("Modified (${modified.size} bytes). Writing…")
+                status("Writing ${xlsx.size} bytes to Downloads/Wortschatz.xlsx…")
+                writeToDownloads(xlsx, "Wortschatz.xlsx")
 
-                // Step 3: write back via ParcelFileDescriptor (more reliable than openOutputStream for SAF)
-                val pfd: ParcelFileDescriptor = contentResolver.openFileDescriptor(uri, "rwt")
-                    ?: throw IOException("openFileDescriptor returned null — no write permission?")
-                FileOutputStream(pfd.fileDescriptor).use { fos ->
-                    fos.write(modified)
-                    fos.flush()
-                }
-                pfd.close()
-
-                // Step 4: verify by re-reading size
-                val verify = contentResolver.openInputStream(uri)?.use { it.available() } ?: -1
-                val col = if (russian) "col C (Russian)" else "col B (German)"
-                status("Saved! \"$word\" -> $col  [verified: $verify bytes]")
-                withContext(Dispatchers.Main) {
-                    binding.etWord.text?.clear()
-                    binding.btnSaveWord.isEnabled = false
-                }
-
-            } catch (e: SecurityException) {
-                status("Permission denied — tap 'Select file' and pick the file again.\n${e.message}")
-                withContext(Dispatchers.Main) { binding.btnSaveWord.isEnabled = true }
+                status("Done! Open Downloads on your phone and check Wortschatz.xlsx — cell A1 should contain: \"$word\"")
+                withContext(Dispatchers.Main) { binding.etWord.text?.clear() }
             } catch (e: Exception) {
                 status("Error (${e.javaClass.simpleName}): ${e.message}")
+            } finally {
                 withContext(Dispatchers.Main) { binding.btnSaveWord.isEnabled = true }
             }
+        }
+    }
+
+    private fun buildMinimalXlsx(word: String): ByteArray {
+        val escaped = word.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        val entries = linkedMapOf(
+            "[Content_Types].xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>""",
+            "_rels/.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""",
+            "xl/workbook.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>""",
+            "xl/_rels/workbook.xml.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>""",
+            "xl/worksheets/sheet1.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>$escaped</t></is></c></row></sheetData></worksheet>"""
+        )
+        val baos = ByteArrayOutputStream()
+        val zos = ZipOutputStream(baos)
+        for ((name, xml) in entries) {
+            zos.putNextEntry(ZipEntry(name))
+            zos.write(xml.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+        }
+        zos.close()
+        return baos.toByteArray()
+    }
+
+    private fun writeToDownloads(data: ByteArray, fileName: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            val resolver = contentResolver
+
+            // Find existing entry our app owns (so we overwrite instead of creating duplicates)
+            var existingId: Long? = null
+            resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.MediaColumns._ID),
+                "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
+                arrayOf(fileName), null
+            )?.use { c ->
+                if (c.moveToFirst()) existingId = c.getLong(0)
+            }
+
+            val uri = if (existingId != null) {
+                ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, existingId!!)
+            } else {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IOException("MediaStore.insert returned null")
+            }
+
+            resolver.openOutputStream(uri, "wt")?.use { it.write(data) }
+                ?: throw IOException("openOutputStream returned null for $uri")
+        } else {
+            // Android 9 and below — direct file I/O (WRITE_EXTERNAL_STORAGE permission covers this)
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            java.io.File(dir, fileName).writeBytes(data)
         }
     }
 
