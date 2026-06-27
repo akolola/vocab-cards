@@ -167,10 +167,10 @@ class MainActivity : AppCompatActivity() {
                 status("Building xlsx…")
                 val xlsx = buildMinimalXlsx(word)
 
-                status("Writing ${xlsx.size} bytes to Downloads/Wortschatz.xlsx…")
-                writeToDownloads(xlsx, "Wortschatz.xlsx")
+                status("Writing ${xlsx.size} bytes to Downloads/VocabCards_test.xlsx…")
+                writeToDownloads(xlsx, "VocabCards_test.xlsx")
 
-                status("Done! Open Downloads on your phone and check Wortschatz.xlsx — cell A1 should contain: \"$word\"")
+                status("Done! Open Downloads on your phone and check VocabCards_test.xlsx — cell A1 should contain: \"$word\"")
                 withContext(Dispatchers.Main) { binding.etWord.text?.clear() }
             } catch (e: Exception) {
                 status("Error (${e.javaClass.simpleName}): ${e.message}")
