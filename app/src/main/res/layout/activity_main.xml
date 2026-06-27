@@ -60,7 +60,18 @@
                 android:layout_height="48dp"
                 android:text="Export xlsx"
                 android:textSize="14sp"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btnClearClipboard"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="Clear"
+                android:textSize="14sp"
+                android:backgroundTint="#CC0000"
+                android:textColor="@android:color/white"
+                style="@style/Widget.Material3.Button" />
 
         </LinearLayout>
 

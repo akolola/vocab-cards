@@ -1,5 +1,6 @@
 package com.fotonotix.vocabcards
 
+import android.app.AlertDialog
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Intent
@@ -131,6 +132,27 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnSaveWord.setOnClickListener { saveWord() }
         binding.btnExport.setOnClickListener { exportToDownloads() }
+        binding.btnClearClipboard.setOnClickListener { confirmClearAll() }
+    }
+
+    private fun confirmClearAll() {
+        AlertDialog.Builder(this)
+            .setTitle("Clear all words?")
+            .setMessage("This will permanently delete all saved words from the clipboard. This cannot be undone.")
+            .setPositiveButton("Delete all") { _, _ ->
+                lifecycleScope.launch(Dispatchers.IO) {
+                    db.dao().clearAll()
+                    withContext(Dispatchers.Main) {
+                        binding.tvSaveStatus.text = "Clipboard cleared."
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+            .also { dialog ->
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    ?.setTextColor(android.graphics.Color.parseColor("#CC0000"))
+            }
     }
 
     private fun saveWord() {
