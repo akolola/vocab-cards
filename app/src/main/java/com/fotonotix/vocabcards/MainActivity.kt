@@ -280,7 +280,7 @@ class MainActivity : AppCompatActivity() {
                     binding.btnPickFile.isEnabled  = true
 
                     if (cards.isEmpty()) {
-                        binding.tvStatus.text = "No cards found. Make sure the sheet is named Fokus."
+                        binding.tvStatus.text = "No cards found. Make sure the sheet is named Focus."
                         return@withContext
                     }
 

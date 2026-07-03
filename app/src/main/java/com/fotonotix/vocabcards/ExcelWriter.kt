@@ -43,7 +43,9 @@ object ExcelWriter {
     fun appendWord(fileBytes: ByteArray, word: String, russian: Boolean): ByteArray? {
         return try {
             val entries = readZip(fileBytes)
-            val path    = findSheetPath(entries, "zwischenablage") ?: return null
+            val path    = findSheetPath(entries, "clipboard")
+                ?: findSheetPath(entries, "zwischenablage")
+                ?: return null
             val xml     = entries[path]?.toString(Charsets.UTF_8) ?: return null
             val shared  = parseSharedStrings(entries["xl/sharedStrings.xml"] ?: byteArrayOf())
 

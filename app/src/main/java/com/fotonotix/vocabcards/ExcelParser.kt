@@ -22,7 +22,9 @@ object ExcelParser {
         val sharedStrings = entries["xl/sharedStrings.xml"]
             ?.let { parseSharedStrings(it) } ?: emptyList()
 
-        val focusPath = findSheetPath(entries, "fokus") ?: return emptyList()
+        val focusPath = findSheetPath(entries, "focus")
+            ?: findSheetPath(entries, "fokus")
+            ?: return emptyList()
         val sheetData = entries[focusPath] ?: return emptyList()
 
         return parseSheet(sheetData, sharedStrings)
