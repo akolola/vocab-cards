@@ -8,5 +8,6 @@ data class ClipboardWord(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val text: String,
     val isRussian: Boolean,
+    val isOld: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 )

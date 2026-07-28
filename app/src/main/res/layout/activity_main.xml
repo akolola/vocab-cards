@@ -14,7 +14,7 @@
         app:tabGravity="fill"
         app:tabMode="fixed" />
 
-    <!-- ===== TAB 0: ADD WORD (default) ===== -->
+    <!-- ===== TAB 0: CLIPBOARD (default) ===== -->
     <LinearLayout
         android:id="@+id/tabAddWord"
         android:layout_width="match_parent"
@@ -22,7 +22,7 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <!-- Title + export button on same row -->
+        <!-- Title row: counts + Export + Clear -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -48,7 +48,7 @@
                     android:id="@+id/tvWordCount"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0 words saved"
+                    android:text="0 new  ·  0 old"
                     android:textSize="13sp"
                     android:textColor="@color/text_secondary" />
 
@@ -99,7 +99,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="28dp">
+            android:layout_marginBottom="20dp">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -127,14 +127,27 @@
 
         </LinearLayout>
 
+        <!-- New word button -->
         <Button
             android:id="@+id/btnSaveWord"
             android:layout_width="match_parent"
             android:layout_height="72dp"
-            android:text="Save word"
-            android:textSize="20sp"
+            android:text="Save — new word"
+            android:textSize="18sp"
             android:textStyle="bold"
-            android:enabled="false" />
+            android:enabled="false"
+            android:layout_marginBottom="10dp" />
+
+        <!-- Old / forgotten word button -->
+        <Button
+            android:id="@+id/btnSaveOldWord"
+            android:layout_width="match_parent"
+            android:layout_height="72dp"
+            android:text="Save — already knew it"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:enabled="false"
+            style="@style/Widget.Material3.Button.TonalButton" />
 
         <TextView
             android:id="@+id/tvSaveStatus"
