@@ -48,7 +48,7 @@
                     android:id="@+id/tvWordCount"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0 new  ·  0 old"
+                    android:text="0 words saved"
                     android:textSize="13sp"
                     android:textColor="@color/text_secondary" />
 
@@ -127,27 +127,14 @@
 
         </LinearLayout>
 
-        <!-- New word button -->
         <Button
             android:id="@+id/btnSaveWord"
             android:layout_width="match_parent"
             android:layout_height="72dp"
-            android:text="Save — new word"
-            android:textSize="18sp"
+            android:text="Save word"
+            android:textSize="20sp"
             android:textStyle="bold"
-            android:enabled="false"
-            android:layout_marginBottom="10dp" />
-
-        <!-- Old / forgotten word button -->
-        <Button
-            android:id="@+id/btnSaveOldWord"
-            android:layout_width="match_parent"
-            android:layout_height="72dp"
-            android:text="Save — already knew it"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:enabled="false"
-            style="@style/Widget.Material3.Button.TonalButton" />
+            android:enabled="false" />
 
         <TextView
             android:id="@+id/tvSaveStatus"

@@ -208,7 +208,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Start from beginning"
-            style="@style/Widget.Material3.Button.OutlinedButton" />
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- ======== NAVIGATION BUTTONS ======== -->

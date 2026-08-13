@@ -12,7 +12,13 @@ object ExcelParser {
         "neu", "alt", "neu+alt", "extra", "bonus", "review"
     )
     private val SUBSECTION_WORDS = setOf(
+        // singular
+        "substantiv", "verb", "adjektiv", "adverb", "phrase",
+        // plural
         "substantive", "verben", "adjektive", "adverbien", "phrasen",
+        // compound
+        "adjektiv & adverb", "adjektiv und adverb",
+        // other
         "redewendungen", "sonstiges", "andere"
     )
 

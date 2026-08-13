@@ -104,19 +104,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupAddWordTab() {
-        // Live word counts from DB
+        // Live word count from DB
         lifecycleScope.launch {
-            db.dao().countNewFlow().collectLatest { n ->
-                val old = binding.tvWordCount.tag as? Int ?: 0
-                binding.tvWordCount.text = "$n new  ·  $old old"
-                binding.tvWordCount.tag = n  // store new count in tag[0]
-            }
-        }
-        lifecycleScope.launch {
-            db.dao().countOldFlow().collectLatest { o ->
-                val raw = binding.tvWordCount.text.toString()
-                val n = raw.substringBefore(" new").toIntOrNull() ?: 0
-                binding.tvWordCount.text = "$n new  ·  $o old"
+            db.dao().countFlow().collectLatest { count ->
+                binding.tvWordCount.text = "$count word${if (count == 1) "" else "s"} saved"
             }
         }
 
@@ -127,13 +118,11 @@ class MainActivity : AppCompatActivity() {
                     binding.tvLangDetected.text = "—"
                     binding.tvColTarget.text    = ""
                     binding.btnSaveWord.isEnabled = false
-                    binding.btnSaveOldWord.isEnabled = false
                 } else {
                     val russian = ExcelWriter.isRussian(text)
                     binding.tvLangDetected.text = if (russian) "Russian" else "German"
                     binding.tvColTarget.text    = if (russian) "→ col C" else "→ col B"
                     binding.btnSaveWord.isEnabled = true
-                    binding.btnSaveOldWord.isEnabled = true
                 }
                 binding.tvSaveStatus.text = ""
             }
@@ -141,8 +130,7 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
         })
 
-        binding.btnSaveWord.setOnClickListener { saveWord(isOld = false) }
-        binding.btnSaveOldWord.setOnClickListener { saveWord(isOld = true) }
+        binding.btnSaveWord.setOnClickListener { saveWord() }
         binding.btnExport.setOnClickListener { exportToDownloads() }
         binding.btnClearClipboard.setOnClickListener { confirmClearAll() }
     }
@@ -167,17 +155,15 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    private fun saveWord(isOld: Boolean) {
+    private fun saveWord() {
         val word = binding.etWord.text?.toString()?.trim() ?: return
         if (word.isEmpty()) return
         val russian = ExcelWriter.isRussian(word)
         binding.btnSaveWord.isEnabled = false
-        binding.btnSaveOldWord.isEnabled = false
         lifecycleScope.launch(Dispatchers.IO) {
-            db.dao().insert(ClipboardWord(text = word, isRussian = russian, isOld = isOld))
+            db.dao().insert(ClipboardWord(text = word, isRussian = russian))
             withContext(Dispatchers.Main) {
-                val label = if (isOld) "old" else "new"
-                binding.tvSaveStatus.text = "Saved ($label): \"$word\""
+                binding.tvSaveStatus.text = "Saved: \"$word\""
                 binding.etWord.text?.clear()
             }
         }
@@ -187,18 +173,16 @@ class MainActivity : AppCompatActivity() {
         binding.btnExport.isEnabled = false
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val newWords = db.dao().getNew()
-                val oldWords = db.dao().getOld()
-                val total = newWords.size + oldWords.size
-                if (total == 0) {
+                val words = db.dao().getAll()
+                if (words.isEmpty()) {
                     status("Nothing to export — save some words first.")
                     return@launch
                 }
-                status("Building Clipboard.xlsx (${newWords.size} new, ${oldWords.size} old)…")
-                val xlsx = buildClipboardXlsx(newWords, oldWords)
+                status("Building Clipboard.xlsx (${words.size} words)…")
+                val xlsx = buildClipboardXlsx(words)
                 status("Writing to Downloads…")
                 writeToDownloads(xlsx, "Clipboard.xlsx")
-                status("Exported to Downloads/Clipboard.xlsx — ${newWords.size} new, ${oldWords.size} old")
+                status("Exported ${words.size} words to Downloads/Clipboard.xlsx")
             } catch (e: Exception) {
                 status("Export error (${e.javaClass.simpleName}): ${e.message}")
             } finally {
@@ -207,25 +191,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildClipboardXlsx(newWords: List<ClipboardWord>, oldWords: List<ClipboardWord>): ByteArray {
-        fun sheetRows(words: List<ClipboardWord>): String {
-            val sb = StringBuilder()
-            words.forEachIndexed { i, w ->
-                val row = i + 1
-                val col = if (w.isRussian) "C" else "B"
-                val esc = w.text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                sb.append("""<row r="$row"><c r="$col$row" t="inlineStr"><is><t>$esc</t></is></c></row>""")
-            }
-            return sb.toString()
+    private fun buildClipboardXlsx(words: List<ClipboardWord>): ByteArray {
+        val rows = StringBuilder()
+        words.forEachIndexed { i, w ->
+            val row = i + 1
+            val col = if (w.isRussian) "C" else "B"
+            val esc = w.text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            rows.append("""<row r="$row"><c r="$col$row" t="inlineStr"><is><t>$esc</t></is></c></row>""")
         }
-
         val entries = linkedMapOf(
-            "[Content_Types].xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>""",
+            "[Content_Types].xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>""",
             "_rels/.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""",
-            "xl/workbook.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="New" sheetId="1" r:id="rId1"/><sheet name="Old" sheetId="2" r:id="rId2"/></sheets></workbook>""",
-            "xl/_rels/workbook.xml.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>""",
-            "xl/worksheets/sheet1.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows(newWords)}</sheetData></worksheet>""",
-            "xl/worksheets/sheet2.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows(oldWords)}</sheetData></worksheet>"""
+            "xl/workbook.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Clipboard" sheetId="1" r:id="rId1"/></sheets></workbook>""",
+            "xl/_rels/workbook.xml.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>""",
+            "xl/worksheets/sheet1.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>$rows</sheetData></worksheet>"""
         )
         val baos = ByteArrayOutputStream()
         val zos = ZipOutputStream(baos)

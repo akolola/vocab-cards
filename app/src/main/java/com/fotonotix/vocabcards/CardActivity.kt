@@ -106,9 +106,12 @@ class CardActivity : AppCompatActivity() {
     private fun advance(dir: Int) {
         val next = position + dir
         when {
-            next < 0                  -> return
-            next >= sessionOrder.size -> showFinished()
-            else                      -> { position = next; showCard() }
+            next < 0 -> return
+            next >= sessionOrder.size -> {
+                if (reviewingWrongs) showFinished()   // wrong-review: show summary
+                else { position = 0; showCard() }     // normal mode: loop back to start
+            }
+            else -> { position = next; showCard() }
         }
     }
 
@@ -244,14 +247,6 @@ class CardActivity : AppCompatActivity() {
             binding.btnReviewWrong2.visibility = View.GONE
         }
 
-        binding.btnRestartAll.setOnClickListener {
-            reviewingWrongs = false
-            sessionOrder.clear()
-            sessionOrder.addAll(allCards.indices)
-            position = 0
-            wrongIndices.clear()
-            allCards.forEach { it.markedWrong = false }
-            showCard()
-        }
+        // No restart button — normal mode loops, wrong-review ends here
     }
 }
