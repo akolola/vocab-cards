@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  108 x 108 dp canvas. Safe zone: circle r=33 centred at (54,54).
+  Design: two stacked flashcards + bold "V" + word-line hints.
+  Back card  (silver #AEAEB2) 36,28→78,66, rotated +9° around its centre (57,47).
+  Front card (off-white #F2F2F7) 30,44→72,82, corners r=5.
+  V glyph (#48484A) and two word-lines (#C7C7CC) on front card.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Back card — silver, rotated -->
+    <group
+        android:pivotX="57"
+        android:pivotY="47"
+        android:rotation="9">
+        <path
+            android:fillColor="#AEAEB2"
+            android:pathData="
+                M41,28 L73,28
+                A5,5 0 0 1 78,33
+                L78,61
+                A5,5 0 0 1 73,66
+                L41,66
+                A5,5 0 0 1 36,61
+                L36,33
+                A5,5 0 0 1 41,28 Z"/>
+    </group>
+
+    <!-- Front card — off-white silver -->
+    <path
+        android:fillColor="#F2F2F7"
+        android:pathData="
+            M35,44 L67,44
+            A5,5 0 0 1 72,49
+            L72,77
+            A5,5 0 0 1 67,82
+            L35,82
+            A5,5 0 0 1 30,77
+            L30,49
+            A5,5 0 0 1 35,44 Z"/>
+
+    <!-- "V" glyph — dark graphite -->
+    <path
+        android:fillColor="#48484A"
+        android:pathData="M36,52 L41,52 L51,70 L61,52 L66,52 L53,74 L49,74 Z"/>
+
+    <!-- Word line 1 — light silver -->
+    <path
+        android:fillColor="#C7C7CC"
+        android:pathData="M36,77 L66,77 L66,79 L36,79 Z"/>
+
+    <!-- Word line 2 — shorter -->
+    <path
+        android:fillColor="#D1D1D6"
+        android:pathData="M36,80 Q36,82 37,82 L54,82 Q55,82 55,80 Z"/>
+
+</vector>
