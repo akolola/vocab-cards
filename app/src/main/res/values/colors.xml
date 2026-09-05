@@ -1,26 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#F5F5F0</color>
-    <color name="text_primary">#1A1A1A</color>
-    <color name="text_secondary">#6B6B6B</color>
+    <!-- Base surfaces — silver/graphite -->
+    <color name="background">#F2F2F7</color>         <!-- light silver (icon front-card tone) -->
+    <color name="text_primary">#1C1C1E</color>        <!-- near-black graphite -->
+    <color name="text_secondary">#636366</color>      <!-- medium graphite -->
 
-    <!-- Gender badge colors -->
-    <color name="badge_m">#1565C0</color>   <!-- masculine → blue -->
-    <color name="badge_f">#C62828</color>   <!-- feminine  → red  -->
-    <color name="badge_n">#2E7D32</color>   <!-- neuter    → green -->
-    <color name="badge_pl">#6A1B9A</color>  <!-- plural    → purple -->
+    <!-- Gender badges — distinct but steel-toned -->
+    <color name="badge_m">#2C5F8A</color>             <!-- steel blue   – masculine -->
+    <color name="badge_f">#8A2C2C</color>             <!-- steel red    – feminine  -->
+    <color name="badge_n">#2C6B30</color>             <!-- forest green – neuter   -->
+    <color name="badge_pl">#5A2C7A</color>            <!-- dusky purple – plural   -->
 
     <!-- Card block backgrounds -->
-    <color name="card_word_bg">#FFFFFF</color>
-    <color name="card_ru_bg">#E8F5E9</color>    <!-- light green – Russian main -->
-    <color name="card_de_bg">#E3F2FD</color>    <!-- light blue  – German form -->
-    <color name="card_ru2_bg">#F3E5F5</color>   <!-- light purple– Russian form -->
-    <color name="card_notes_bg">#FAFAFA</color>
+    <color name="card_word_bg">#FFFFFF</color>        <!-- white  – main word card   -->
+    <color name="card_ru_bg">#EBEBF0</color>          <!-- silver – Russian line     -->
+    <color name="card_de_bg">#E5E5EA</color>          <!-- silver – German form      -->
+    <color name="card_ru2_bg">#DFDFE4</color>         <!-- silver – Russian form     -->
+    <color name="card_notes_bg">#E5E5EA</color>       <!-- silver – extra / notes    -->
 
-    <color name="badge_neu">#2E7D32</color>   <!-- Neu → green -->
-    <color name="badge_alt">#E65100</color>   <!-- Alt → amber/orange -->
+    <!-- Section badges -->
+    <color name="badge_neu">#2C6B30</color>           <!-- Neu – forest green  -->
+    <color name="badge_alt">#C04A00</color>           <!-- Alt – amber-orange  -->
 
-    <color name="primary">#1565C0</color>
-    <color name="primary_variant">#003c8f</color>
-    <color name="secondary">#2E7D32</color>
+    <!-- Theme primary — dark graphite (buttons, tabs) -->
+    <color name="primary">#48484A</color>             <!-- dark graphite -->
+    <color name="primary_variant">#3A3A3C</color>     <!-- icon background tone -->
+    <color name="secondary">#636366</color>           <!-- medium graphite -->
 </resources>
