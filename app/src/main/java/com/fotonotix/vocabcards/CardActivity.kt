@@ -13,6 +13,8 @@ class CardActivity : AppCompatActivity() {
         const val EXTRA_CARDS         = "extra_cards"
         const val EXTRA_WRONG_ONLY    = "extra_wrong_only"
         const val EXTRA_WRONG_INDICES = "extra_wrong_indices"
+        const val EXTRA_CARD_INDICES  = "extra_card_indices"
+        const val EXTRA_LEARNED_MODE  = "extra_learned_mode"
     }
 
     private lateinit var binding: ActivityCardBinding
@@ -21,12 +23,13 @@ class CardActivity : AppCompatActivity() {
     private val sessionOrder = mutableListOf<Int>()
     private var position = 0
 
-    private val wrongIndices = mutableSetOf<Int>()  // session-local wrong tracking
+    private val wrongIndices = mutableSetOf<Int>()
     private var reviewingWrongs = false
+    private var learnedMode = false
     private var isRevealed = false
 
-    // In wrong-only mode: maps session card index → global index in WrongCardStore
     private var globalWrongIndices = intArrayOf()
+    private var cardGlobalIndices  = intArrayOf()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,8 +45,10 @@ class CardActivity : AppCompatActivity() {
 
         if (allCards.isEmpty()) { finish(); return }
 
-        reviewingWrongs = intent.getBooleanExtra(EXTRA_WRONG_ONLY, false)
+        reviewingWrongs    = intent.getBooleanExtra(EXTRA_WRONG_ONLY, false)
+        learnedMode        = intent.getBooleanExtra(EXTRA_LEARNED_MODE, false)
         globalWrongIndices = intent.getIntArrayExtra(EXTRA_WRONG_INDICES) ?: intArrayOf()
+        cardGlobalIndices  = intent.getIntArrayExtra(EXTRA_CARD_INDICES)  ?: intArrayOf()
 
         sessionOrder.addAll(allCards.indices)
         showCard()
@@ -54,11 +59,14 @@ class CardActivity : AppCompatActivity() {
         binding.btnPrev.setOnClickListener { advance(-1) }
 
         binding.btnWrong.setOnClickListener {
-            if (reviewingWrongs) {
-                unmarkCurrentCard()
-            } else {
-                markCurrentCardWrong()
-            }
+            if (reviewingWrongs) unmarkCurrentCard()
+            else markCurrentCardWrong()
+        }
+
+        binding.btnLearned.setOnClickListener {
+            if (!isRevealed) return@setOnClickListener
+            if (learnedMode) unmarkCurrentCardLearned()
+            else markCurrentCardLearned()
         }
 
         binding.btnReviewWrong.setOnClickListener {
@@ -87,7 +95,6 @@ class CardActivity : AppCompatActivity() {
 
     private fun unmarkCurrentCard() {
         val sessionIdx = sessionOrder[position]
-        // Resolve to global index (the one stored in WrongCardStore)
         val globalIdx = if (sessionIdx < globalWrongIndices.size)
             globalWrongIndices[sessionIdx] else sessionIdx
 
@@ -97,10 +104,35 @@ class CardActivity : AppCompatActivity() {
 
         allCards[sessionIdx].markedWrong = false
         updateActionButton(sessionIdx)
-        // Visually dim the card so user knows it's removed, then advance
         binding.btnWrong.text = "Removed"
         binding.btnWrong.isEnabled = false
         binding.btnWrong.alpha = 0.4f
+    }
+
+    private fun markCurrentCardLearned() {
+        val localIdx  = sessionOrder[position]
+        val globalIdx = if (localIdx < cardGlobalIndices.size) cardGlobalIndices[localIdx] else localIdx
+        val persisted = LearnedCardStore.load(this).toMutableSet()
+        persisted.add(globalIdx)
+        LearnedCardStore.save(this, persisted)
+
+        sessionOrder.removeAt(position)
+        if (sessionOrder.isEmpty()) { showFinished(allMastered = true); return }
+        if (position >= sessionOrder.size) position = 0
+        showCard()
+    }
+
+    private fun unmarkCurrentCardLearned() {
+        val localIdx  = sessionOrder[position]
+        val globalIdx = if (localIdx < cardGlobalIndices.size) cardGlobalIndices[localIdx] else localIdx
+        val persisted = LearnedCardStore.load(this).toMutableSet()
+        persisted.remove(globalIdx)
+        LearnedCardStore.save(this, persisted)
+
+        sessionOrder.removeAt(position)
+        if (sessionOrder.isEmpty()) { showFinished(); return }
+        if (position >= sessionOrder.size) position = 0
+        showCard()
     }
 
     private fun advance(dir: Int) {
@@ -108,8 +140,8 @@ class CardActivity : AppCompatActivity() {
         when {
             next < 0 -> return
             next >= sessionOrder.size -> {
-                if (reviewingWrongs) showFinished()   // wrong-review: show summary
-                else { position = 0; showCard() }     // normal mode: loop back to start
+                if (reviewingWrongs) showFinished()
+                else { position = 0; showCard() }
             }
             else -> { position = next; showCard() }
         }
@@ -119,7 +151,6 @@ class CardActivity : AppCompatActivity() {
         val cardIdx = sessionOrder[position]
         val card = allCards[cardIdx]
 
-        // Section badge
         val sectionColor = when (card.section.lowercase()) {
             "neu" -> R.color.badge_neu
             "alt" -> R.color.badge_alt
@@ -134,12 +165,10 @@ class CardActivity : AppCompatActivity() {
             binding.tvSectionBadge.visibility = View.GONE
         }
 
-        // Subsection label
         binding.tvSubsection.text = card.subsection
         binding.tvSubsection.visibility =
             if (card.subsection.isBlank()) View.GONE else View.VISIBLE
 
-        // Word hidden until revealed
         isRevealed = false
         binding.tvWord.text = card.word
         binding.tvWord.visibility = View.INVISIBLE
@@ -156,7 +185,7 @@ class CardActivity : AppCompatActivity() {
                 ContextCompat.getColorStateList(this, badgeColor)
             binding.tvGender.visibility = View.INVISIBLE
         } else {
-            binding.tvGender.text = ""   // clear stale text so reveal check doesn't show old value
+            binding.tvGender.text = ""
             binding.tvGender.visibility = View.GONE
         }
 
@@ -164,16 +193,32 @@ class CardActivity : AppCompatActivity() {
         binding.tvArticle.visibility =
             if (card.article.isEmpty()) View.GONE else View.INVISIBLE
 
-        // Translations always visible
         showRow(binding.rowRussian, binding.tvRussian, card.russian)
         showRow(binding.rowExtra,   binding.tvExtra,   card.extra)
 
-        // Buttons
         binding.btnNext.text = "Show"
         binding.btnWrong.isEnabled = false
         binding.btnWrong.alpha = 0.3f
 
-        // Progress
+        // Learned button visibility and state
+        when {
+            reviewingWrongs -> {
+                binding.btnLearned.visibility = View.GONE
+            }
+            learnedMode -> {
+                binding.btnLearned.visibility = View.VISIBLE
+                binding.btnLearned.text = "Unlearn"
+                binding.btnLearned.isEnabled = false
+                binding.btnLearned.alpha = 0.3f
+            }
+            else -> {
+                binding.btnLearned.visibility = View.VISIBLE
+                binding.btnLearned.text = "Learned"
+                binding.btnLearned.isEnabled = false
+                binding.btnLearned.alpha = 0.3f
+            }
+        }
+
         binding.tvProgress.text = "${position + 1} / ${sessionOrder.size}"
         binding.tvProgressLabel.visibility =
             if (reviewingWrongs) View.VISIBLE else View.GONE
@@ -195,6 +240,11 @@ class CardActivity : AppCompatActivity() {
             binding.tvGender.visibility = View.VISIBLE
         binding.btnNext.text = "Next >>"
         updateActionButton(sessionOrder[position])
+
+        if (!reviewingWrongs) {
+            binding.btnLearned.isEnabled = true
+            binding.btnLearned.alpha = 1.0f
+        }
     }
 
     private fun updateActionButton(cardIdx: Int) {
@@ -222,14 +272,18 @@ class CardActivity : AppCompatActivity() {
         }
     }
 
-    private fun showFinished() {
+    private fun showFinished(allMastered: Boolean = false) {
         binding.cardLayout.visibility = View.GONE
         binding.finishedLayout.visibility = View.VISIBLE
-        binding.tvFinishedLabel.text =
-            if (reviewingWrongs) "Review complete!" else "All cards done!"
+        binding.tvFinishedLabel.text = when {
+            allMastered     -> "All cards mastered!"
+            learnedMode     -> "Session complete!"
+            reviewingWrongs -> "Review complete!"
+            else            -> "All cards done!"
+        }
 
         val wrongCount = wrongIndices.size
-        if (wrongCount > 0) {
+        if (wrongCount > 0 && !learnedMode) {
             binding.tvFinishedWrong.text = "$wrongCount card(s) marked for review"
             binding.tvFinishedWrong.visibility = View.VISIBLE
             binding.btnReviewWrong2.visibility = View.VISIBLE
@@ -246,7 +300,5 @@ class CardActivity : AppCompatActivity() {
             binding.tvFinishedWrong.visibility = View.GONE
             binding.btnReviewWrong2.visibility = View.GONE
         }
-
-        // No restart button — normal mode loops, wrong-review ends here
     }
 }

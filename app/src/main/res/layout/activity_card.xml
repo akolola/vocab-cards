@@ -213,17 +213,37 @@
     </LinearLayout>
 
     <!-- ======== NAVIGATION BUTTONS ======== -->
-    <!-- Row 1: Wrong (full width, tonal) -->
-    <Button
-        android:id="@+id/btnWrong"
+    <!-- Row 1: Mark wrong | Learned -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="72dp"
-        android:layout_marginHorizontal="12dp"
-        android:layout_marginTop="8dp"
-        android:text="Mark"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        style="@style/Widget.Material3.Button.TonalButton" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingTop="8dp">
+
+        <Button
+            android:id="@+id/btnWrong"
+            android:layout_width="0dp"
+            android:layout_height="72dp"
+            android:layout_weight="1"
+            android:text="Mark"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnLearned"
+            android:layout_width="0dp"
+            android:layout_height="72dp"
+            android:layout_weight="1"
+            android:text="Learned"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_marginStart="6dp" />
+
+    </LinearLayout>
 
     <!-- Row 2: Prev | Next (side by side, large) -->
     <LinearLayout

@@ -184,6 +184,17 @@
             android:visibility="gone" />
 
         <Button
+            android:id="@+id/btnStartComplete"
+            android:layout_width="match_parent"
+            android:layout_height="80dp"
+            android:text="Review complete"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone" />
+
+        <Button
             android:id="@+id/btnStartWrong"
             android:layout_width="match_parent"
             android:layout_height="80dp"
@@ -200,7 +211,17 @@
             android:layout_height="wrap_content"
             android:text="Clear wrong list"
             android:textSize="15sp"
-            android:layout_marginBottom="24dp"
+            android:layout_marginBottom="8dp"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnClearLearned"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Reset learned list"
+            android:textSize="15sp"
+            android:layout_marginBottom="16dp"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:visibility="gone" />
 

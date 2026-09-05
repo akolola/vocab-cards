@@ -306,12 +306,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateStartButtons() {
-        val wrongIndices = WrongCardStore.load(this)
+        val wrongIndices   = WrongCardStore.load(this)
+        val learnedIndices = LearnedCardStore.load(this)
 
+        val allIndices      = loadedCards.indices.toList()
+        val learningIndices = allIndices.filter { it !in learnedIndices }
+        val completeIndices = allIndices.filter { it in learnedIndices }
+
+        // Start learning button (primary — always visible when cards are loaded)
         binding.btnStartAll.visibility = View.VISIBLE
-        binding.btnStartAll.text = "Start all  (${loadedCards.size})"
-        binding.btnStartAll.setOnClickListener { openCards(loadedCards.indices.toList()) }
+        val learningLabel = if (completeIndices.isEmpty()) "Start all" else "Start learning"
+        binding.btnStartAll.text = "$learningLabel  (${learningIndices.size})"
+        binding.btnStartAll.setOnClickListener {
+            if (learningIndices.isEmpty()) return@setOnClickListener
+            openCards(learningIndices)
+        }
 
+        // Review complete list
+        if (completeIndices.isNotEmpty()) {
+            binding.btnStartComplete.visibility = View.VISIBLE
+            binding.btnStartComplete.text = "Review complete  (${completeIndices.size})"
+            binding.btnStartComplete.setOnClickListener {
+                openCards(completeIndices, learnedMode = true)
+            }
+            binding.btnClearLearned.visibility = View.VISIBLE
+            binding.btnClearLearned.setOnClickListener {
+                LearnedCardStore.clear(this)
+                updateStartButtons()
+            }
+        } else {
+            binding.btnStartComplete.visibility = View.GONE
+            binding.btnClearLearned.visibility = View.GONE
+        }
+
+        // Review wrong cards
         if (wrongIndices.isNotEmpty()) {
             binding.btnStartWrong.visibility = View.VISIBLE
             binding.btnStartWrong.text = "Review wrong  (${wrongIndices.size})"
@@ -336,11 +364,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openCards(indices: List<Int>, wrongOnly: Boolean = false) {
+    private fun openCards(indices: List<Int>, wrongOnly: Boolean = false, learnedMode: Boolean = false) {
         val intent = Intent(this, CardActivity::class.java)
         intent.putExtra(CardActivity.EXTRA_CARDS, ArrayList(indices.map { loadedCards[it] }))
         intent.putExtra(CardActivity.EXTRA_WRONG_ONLY, wrongOnly)
         intent.putExtra(CardActivity.EXTRA_WRONG_INDICES, indices.toIntArray())
+        intent.putExtra(CardActivity.EXTRA_CARD_INDICES,  indices.toIntArray())
+        intent.putExtra(CardActivity.EXTRA_LEARNED_MODE,  learnedMode)
         startActivity(intent)
     }
 }
