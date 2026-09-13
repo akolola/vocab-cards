@@ -292,25 +292,24 @@ class MainActivity : AppCompatActivity() {
             openCards(learning)
         }
 
-        // Move all to database — only when sublist is empty (everything mastered)
-        if (learning.isEmpty() && learned.isNotEmpty()) {
-            binding.btnArchiveAll.visibility = View.VISIBLE
-            binding.btnArchiveAll.text = "Move all to database  (${learned.size})"
-            binding.btnArchiveAll.setOnClickListener {
-                AlertDialog.Builder(this)
-                    .setTitle("Move all to database?")
-                    .setMessage("${learned.size} mastered word(s) will be archived. The deck clears and is ready for a new batch.")
-                    .setPositiveButton("Move") { _, _ ->
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            vocabDb.dao().archiveAllLearned()
-                            withContext(Dispatchers.Main) { refreshStudyTab() }
-                        }
+        // Move all to database — always visible, enabled only when sublist is empty
+        binding.btnArchiveAll.visibility = View.VISIBLE
+        val allMastered = learning.isEmpty() && learned.isNotEmpty()
+        binding.btnArchiveAll.isEnabled = allMastered
+        binding.btnArchiveAll.alpha = if (allMastered) 1.0f else 0.35f
+        binding.btnArchiveAll.text = "Move all to database  (${learned.size})"
+        binding.btnArchiveAll.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Move all to database?")
+                .setMessage("${learned.size} mastered word(s) will be archived. The deck clears and is ready for a new batch.")
+                .setPositiveButton("Move") { _, _ ->
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        vocabDb.dao().archiveAllLearned()
+                        withContext(Dispatchers.Main) { refreshStudyTab() }
                     }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            }
-        } else {
-            binding.btnArchiveAll.visibility = View.GONE
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
 
         // Review mastered
