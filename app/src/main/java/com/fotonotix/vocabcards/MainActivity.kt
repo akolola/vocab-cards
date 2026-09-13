@@ -1,18 +1,11 @@
 package com.fotonotix.vocabcards
 
 import android.app.AlertDialog
-import android.content.ContentUris
-import android.content.ContentValues
 import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.os.Bundle
-import android.os.Environment
-import android.provider.MediaStore
-import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
+import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.tabs.TabLayout
@@ -21,10 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.io.IOException
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -80,12 +69,10 @@ class MainActivity : AppCompatActivity() {
                 val text = s?.toString()?.trim() ?: ""
                 if (text.isEmpty()) {
                     binding.tvLangDetected.text = "—"
-                    binding.tvColTarget.text    = ""
                     binding.btnSaveWord.isEnabled = false
                 } else {
                     val russian = ExcelWriter.isRussian(text)
                     binding.tvLangDetected.text = if (russian) "Russian" else "German"
-                    binding.tvColTarget.text    = if (russian) "→ col C" else "→ col B"
                     binding.btnSaveWord.isEnabled = true
                 }
                 binding.tvSaveStatus.text = ""
@@ -95,7 +82,6 @@ class MainActivity : AppCompatActivity() {
         })
 
         binding.btnSaveWord.setOnClickListener { saveClipboardWord() }
-        binding.btnExport.setOnClickListener { exportClipboardToDownloads() }
         binding.btnClearClipboard.setOnClickListener { confirmClearClipboard() }
     }
 
@@ -131,88 +117,6 @@ class MainActivity : AppCompatActivity() {
                 dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                     ?.setTextColor(android.graphics.Color.parseColor("#CC0000"))
             }
-    }
-
-    private fun exportClipboardToDownloads() {
-        binding.btnExport.isEnabled = false
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val words = clipboardDb.dao().getAll()
-                if (words.isEmpty()) {
-                    status("Nothing to export — save some words first.")
-                    return@launch
-                }
-                status("Building Clipboard.xlsx (${words.size} words)…")
-                val xlsx = buildClipboardXlsx(words)
-                writeToDownloads(xlsx, "Clipboard.xlsx")
-                status("Exported ${words.size} words to Downloads/Clipboard.xlsx")
-            } catch (e: Exception) {
-                status("Export error (${e.javaClass.simpleName}): ${e.message}")
-            } finally {
-                withContext(Dispatchers.Main) { binding.btnExport.isEnabled = true }
-            }
-        }
-    }
-
-    private fun buildClipboardXlsx(words: List<ClipboardWord>): ByteArray {
-        val rows = StringBuilder()
-        words.forEachIndexed { i, w ->
-            val row = i + 1
-            val col = if (w.isRussian) "C" else "B"
-            val esc = w.text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            rows.append("""<row r="$row"><c r="$col$row" t="inlineStr"><is><t>$esc</t></is></c></row>""")
-        }
-        val entries = linkedMapOf(
-            "[Content_Types].xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>""",
-            "_rels/.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""",
-            "xl/workbook.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Clipboard" sheetId="1" r:id="rId1"/></sheets></workbook>""",
-            "xl/_rels/workbook.xml.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>""",
-            "xl/worksheets/sheet1.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>$rows</sheetData></worksheet>"""
-        )
-        val baos = ByteArrayOutputStream()
-        ZipOutputStream(baos).use { zos ->
-            for ((name, xml) in entries) {
-                zos.putNextEntry(ZipEntry(name))
-                zos.write(xml.toByteArray(Charsets.UTF_8))
-                zos.closeEntry()
-            }
-        }
-        return baos.toByteArray()
-    }
-
-    private fun writeToDownloads(data: ByteArray, fileName: String) {
-        val mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val resolver = contentResolver
-            var existingId: Long? = null
-            resolver.query(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.MediaColumns._ID),
-                "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
-                arrayOf(fileName), null
-            )?.use { c -> if (c.moveToFirst()) existingId = c.getLong(0) }
-
-            val uri = if (existingId != null) {
-                ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, existingId!!)
-            } else {
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                }
-                resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                    ?: throw IOException("MediaStore.insert returned null")
-            }
-            resolver.openOutputStream(uri, "wt")?.use { it.write(data) }
-                ?: throw IOException("openOutputStream returned null")
-        } else {
-            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            java.io.File(dir, fileName).writeBytes(data)
-        }
-    }
-
-    private suspend fun status(msg: String) = withContext(Dispatchers.Main) {
-        binding.tvSaveStatus.text = msg
     }
 
     // ──────────────────────────── STUDY TAB ────────────────────────────
