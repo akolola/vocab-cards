@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Database(entities = [VocabCardEntity::class], version = 1)
 abstract class VocabDatabase : RoomDatabase() {
@@ -18,7 +21,14 @@ abstract class VocabDatabase : RoomDatabase() {
                 context.applicationContext,
                 VocabDatabase::class.java,
                 "vocab_db"
-            ).build().also { INSTANCE = it }
+            ).build().also { db ->
+                INSTANCE = db
+                CoroutineScope(Dispatchers.IO).launch {
+                    if (db.dao().countAll() == 0) {
+                        db.dao().insertAll(SeedData.cards)
+                    }
+                }
+            }
         }
     }
 }

@@ -24,6 +24,9 @@ interface VocabCardDao {
     @Query("SELECT COUNT(*) FROM vocab_cards")
     fun countFlow(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM vocab_cards")
+    suspend fun countAll(): Int
+
     @Query("UPDATE vocab_cards SET marked_wrong = :wrong WHERE id = :id")
     suspend fun setWrong(id: Int, wrong: Boolean)
 
