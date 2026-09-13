@@ -5,31 +5,31 @@ import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.fotonotix.vocabcards.databinding.ActivityCardBinding
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class CardActivity : AppCompatActivity() {
 
     companion object {
-        const val EXTRA_CARDS         = "extra_cards"
-        const val EXTRA_WRONG_ONLY    = "extra_wrong_only"
-        const val EXTRA_WRONG_INDICES = "extra_wrong_indices"
-        const val EXTRA_CARD_INDICES  = "extra_card_indices"
-        const val EXTRA_LEARNED_MODE  = "extra_learned_mode"
+        const val EXTRA_CARDS        = "extra_cards"
+        const val EXTRA_WRONG_ONLY   = "extra_wrong_only"
+        const val EXTRA_LEARNED_MODE = "extra_learned_mode"
     }
 
     private lateinit var binding: ActivityCardBinding
     private lateinit var allCards: ArrayList<VocabCard>
 
+    private val db by lazy { VocabDatabase.get(this) }
+
     private val sessionOrder = mutableListOf<Int>()
     private var position = 0
 
-    private val wrongIndices = mutableSetOf<Int>()
+    private val wrongIndices = mutableSetOf<Int>()  // in-session wrong tracking
     private var reviewingWrongs = false
     private var learnedMode = false
     private var isRevealed = false
-
-    private var globalWrongIndices = intArrayOf()
-    private var cardGlobalIndices  = intArrayOf()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,10 +45,8 @@ class CardActivity : AppCompatActivity() {
 
         if (allCards.isEmpty()) { finish(); return }
 
-        reviewingWrongs    = intent.getBooleanExtra(EXTRA_WRONG_ONLY, false)
-        learnedMode        = intent.getBooleanExtra(EXTRA_LEARNED_MODE, false)
-        globalWrongIndices = intent.getIntArrayExtra(EXTRA_WRONG_INDICES) ?: intArrayOf()
-        cardGlobalIndices  = intent.getIntArrayExtra(EXTRA_CARD_INDICES)  ?: intArrayOf()
+        reviewingWrongs = intent.getBooleanExtra(EXTRA_WRONG_ONLY, false)
+        learnedMode     = intent.getBooleanExtra(EXTRA_LEARNED_MODE, false)
 
         sessionOrder.addAll(allCards.indices)
         showCard()
@@ -84,38 +82,35 @@ class CardActivity : AppCompatActivity() {
 
     private fun markCurrentCardWrong() {
         val cardIdx = sessionOrder[position]
-        allCards[cardIdx].markedWrong = true
+        val card = allCards[cardIdx]
+        card.markedWrong = true
         wrongIndices.add(cardIdx)
-        val persisted = WrongCardStore.load(this).toMutableSet()
-        persisted.addAll(wrongIndices)
-        WrongCardStore.save(this, persisted)
+        if (card.id > 0) {
+            lifecycleScope.launch(Dispatchers.IO) { db.dao().setWrong(card.id, true) }
+        }
         updateActionButton(cardIdx)
         advance(+1)
     }
 
     private fun unmarkCurrentCard() {
-        val sessionIdx = sessionOrder[position]
-        val globalIdx = if (sessionIdx < globalWrongIndices.size)
-            globalWrongIndices[sessionIdx] else sessionIdx
-
-        val persisted = WrongCardStore.load(this).toMutableSet()
-        persisted.remove(globalIdx)
-        WrongCardStore.save(this, persisted)
-
-        allCards[sessionIdx].markedWrong = false
-        updateActionButton(sessionIdx)
+        val cardIdx = sessionOrder[position]
+        val card = allCards[cardIdx]
+        card.markedWrong = false
+        if (card.id > 0) {
+            lifecycleScope.launch(Dispatchers.IO) { db.dao().setWrong(card.id, false) }
+        }
         binding.btnWrong.text = "Removed"
         binding.btnWrong.isEnabled = false
         binding.btnWrong.alpha = 0.4f
     }
 
     private fun markCurrentCardLearned() {
-        val localIdx  = sessionOrder[position]
-        val globalIdx = if (localIdx < cardGlobalIndices.size) cardGlobalIndices[localIdx] else localIdx
-        val persisted = LearnedCardStore.load(this).toMutableSet()
-        persisted.add(globalIdx)
-        LearnedCardStore.save(this, persisted)
-
+        val localIdx = sessionOrder[position]
+        val card = allCards[localIdx]
+        card.learned = true
+        if (card.id > 0) {
+            lifecycleScope.launch(Dispatchers.IO) { db.dao().setLearned(card.id, true) }
+        }
         sessionOrder.removeAt(position)
         if (sessionOrder.isEmpty()) { showFinished(allMastered = true); return }
         if (position >= sessionOrder.size) position = 0
@@ -123,12 +118,12 @@ class CardActivity : AppCompatActivity() {
     }
 
     private fun unmarkCurrentCardLearned() {
-        val localIdx  = sessionOrder[position]
-        val globalIdx = if (localIdx < cardGlobalIndices.size) cardGlobalIndices[localIdx] else localIdx
-        val persisted = LearnedCardStore.load(this).toMutableSet()
-        persisted.remove(globalIdx)
-        LearnedCardStore.save(this, persisted)
-
+        val localIdx = sessionOrder[position]
+        val card = allCards[localIdx]
+        card.learned = false
+        if (card.id > 0) {
+            lifecycleScope.launch(Dispatchers.IO) { db.dao().setLearned(card.id, false) }
+        }
         sessionOrder.removeAt(position)
         if (sessionOrder.isEmpty()) { showFinished(); return }
         if (position >= sessionOrder.size) position = 0
@@ -200,11 +195,8 @@ class CardActivity : AppCompatActivity() {
         binding.btnWrong.isEnabled = false
         binding.btnWrong.alpha = 0.3f
 
-        // Learned button visibility and state
         when {
-            reviewingWrongs -> {
-                binding.btnLearned.visibility = View.GONE
-            }
+            reviewingWrongs -> binding.btnLearned.visibility = View.GONE
             learnedMode -> {
                 binding.btnLearned.visibility = View.VISIBLE
                 binding.btnLearned.text = "Unlearn"
@@ -240,7 +232,6 @@ class CardActivity : AppCompatActivity() {
             binding.tvGender.visibility = View.VISIBLE
         binding.btnNext.text = "Next >>"
         updateActionButton(sessionOrder[position])
-
         if (!reviewingWrongs) {
             binding.btnLearned.isEnabled = true
             binding.btnLearned.alpha = 1.0f
@@ -248,28 +239,22 @@ class CardActivity : AppCompatActivity() {
     }
 
     private fun updateActionButton(cardIdx: Int) {
+        val card = allCards[cardIdx]
         if (reviewingWrongs) {
-            val removed = !WrongCardStore.load(this).contains(
-                if (cardIdx < globalWrongIndices.size) globalWrongIndices[cardIdx] else cardIdx
-            )
+            val removed = !card.markedWrong
             binding.btnWrong.text = if (removed) "Removed" else "Unmark"
             binding.btnWrong.alpha = if (removed) 0.4f else 1.0f
             binding.btnWrong.isEnabled = isRevealed && !removed
         } else {
-            val isMarked = allCards[cardIdx].markedWrong
-            binding.btnWrong.text = if (isMarked) "Marked" else "Mark"
-            binding.btnWrong.alpha = if (isMarked) 0.5f else 1.0f
-            binding.btnWrong.isEnabled = isRevealed && !isMarked
+            binding.btnWrong.text = if (card.markedWrong) "Marked" else "Mark"
+            binding.btnWrong.alpha = if (card.markedWrong) 0.5f else 1.0f
+            binding.btnWrong.isEnabled = isRevealed && !card.markedWrong
         }
     }
 
     private fun showRow(row: View, tv: android.widget.TextView, text: String) {
-        if (text.isBlank()) {
-            row.visibility = View.GONE
-        } else {
-            row.visibility = View.VISIBLE
-            tv.text = text
-        }
+        if (text.isBlank()) row.visibility = View.GONE
+        else { row.visibility = View.VISIBLE; tv.text = text }
     }
 
     private fun showFinished(allMastered: Boolean = false) {

@@ -31,27 +31,22 @@ import java.util.zip.ZipOutputStream
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private var loadedCards: List<VocabCard> = emptyList()
 
-    private val db by lazy { ClipboardDatabase.get(this) }
+    private val clipboardDb by lazy { ClipboardDatabase.get(this) }
+    private val vocabDb     by lazy { VocabDatabase.get(this) }
 
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            grantAndSave(uri)
-            loadFile(uri)
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+            importFromExcel(uri)
         }
-    }
-
-    private fun grantAndSave(uri: Uri) {
-        try {
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
-        } catch (_: Exception) {}
-        WrongCardStore.saveLastFile(this, uri, resolveFileName(uri))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,31 +55,16 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupTabs()
-        setupAddWordTab()
-
-        binding.btnPickFile.setOnClickListener {
-            filePicker.launch(arrayOf(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "application/vnd.ms-excel",
-                "*/*"
-            ))
-        }
-
-        val lastUri = WrongCardStore.loadLastFileUri(this)
-        if (lastUri != null) {
-            val name = WrongCardStore.loadLastFileName(this)
-            binding.tvStatus.text = "Loading ${if (name.isNotBlank()) name else "last file"}…"
-            loadFile(lastUri, onFailure = {
-                binding.tvStatus.text = "Could not reopen last file. Please pick it again."
-                WrongCardStore.clearLastFile(this)
-            })
-        }
+        setupClipboardTab()
+        setupStudyTab()
     }
 
     override fun onResume() {
         super.onResume()
-        if (loadedCards.isNotEmpty()) updateStartButtons()
+        refreshStudyTab()
     }
+
+    // ──────────────────────────── TABS ────────────────────────────
 
     private fun setupTabs() {
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText("Clipboard"))
@@ -103,10 +83,11 @@ class MainActivity : AppCompatActivity() {
         binding.tabStudy.visibility   = View.GONE
     }
 
-    private fun setupAddWordTab() {
-        // Live word count from DB
+    // ──────────────────────────── CLIPBOARD TAB ────────────────────────────
+
+    private fun setupClipboardTab() {
         lifecycleScope.launch {
-            db.dao().countFlow().collectLatest { count ->
+            clipboardDb.dao().countFlow().collectLatest { count ->
                 binding.tvWordCount.text = "$count word${if (count == 1) "" else "s"} saved"
             }
         }
@@ -130,18 +111,32 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
         })
 
-        binding.btnSaveWord.setOnClickListener { saveWord() }
-        binding.btnExport.setOnClickListener { exportToDownloads() }
-        binding.btnClearClipboard.setOnClickListener { confirmClearAll() }
+        binding.btnSaveWord.setOnClickListener { saveClipboardWord() }
+        binding.btnExport.setOnClickListener { exportClipboardToDownloads() }
+        binding.btnClearClipboard.setOnClickListener { confirmClearClipboard() }
     }
 
-    private fun confirmClearAll() {
+    private fun saveClipboardWord() {
+        val word = binding.etWord.text?.toString()?.trim() ?: return
+        if (word.isEmpty()) return
+        val russian = ExcelWriter.isRussian(word)
+        binding.btnSaveWord.isEnabled = false
+        lifecycleScope.launch(Dispatchers.IO) {
+            clipboardDb.dao().insert(ClipboardWord(text = word, isRussian = russian))
+            withContext(Dispatchers.Main) {
+                binding.tvSaveStatus.text = "Saved: \"$word\""
+                binding.etWord.text?.clear()
+            }
+        }
+    }
+
+    private fun confirmClearClipboard() {
         AlertDialog.Builder(this)
             .setTitle("Clear all words?")
             .setMessage("This will permanently delete all saved words from the clipboard. This cannot be undone.")
             .setPositiveButton("Delete all") { _, _ ->
                 lifecycleScope.launch(Dispatchers.IO) {
-                    db.dao().clearAll()
+                    clipboardDb.dao().clearAll()
                     withContext(Dispatchers.Main) {
                         binding.tvSaveStatus.text = "Clipboard cleared."
                     }
@@ -155,32 +150,17 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    private fun saveWord() {
-        val word = binding.etWord.text?.toString()?.trim() ?: return
-        if (word.isEmpty()) return
-        val russian = ExcelWriter.isRussian(word)
-        binding.btnSaveWord.isEnabled = false
-        lifecycleScope.launch(Dispatchers.IO) {
-            db.dao().insert(ClipboardWord(text = word, isRussian = russian))
-            withContext(Dispatchers.Main) {
-                binding.tvSaveStatus.text = "Saved: \"$word\""
-                binding.etWord.text?.clear()
-            }
-        }
-    }
-
-    private fun exportToDownloads() {
+    private fun exportClipboardToDownloads() {
         binding.btnExport.isEnabled = false
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val words = db.dao().getAll()
+                val words = clipboardDb.dao().getAll()
                 if (words.isEmpty()) {
                     status("Nothing to export — save some words first.")
                     return@launch
                 }
                 status("Building Clipboard.xlsx (${words.size} words)…")
                 val xlsx = buildClipboardXlsx(words)
-                status("Writing to Downloads…")
                 writeToDownloads(xlsx, "Clipboard.xlsx")
                 status("Exported ${words.size} words to Downloads/Clipboard.xlsx")
             } catch (e: Exception) {
@@ -207,13 +187,13 @@ class MainActivity : AppCompatActivity() {
             "xl/worksheets/sheet1.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>$rows</sheetData></worksheet>"""
         )
         val baos = ByteArrayOutputStream()
-        val zos = ZipOutputStream(baos)
-        for ((name, xml) in entries) {
-            zos.putNextEntry(ZipEntry(name))
-            zos.write(xml.toByteArray(Charsets.UTF_8))
-            zos.closeEntry()
+        ZipOutputStream(baos).use { zos ->
+            for ((name, xml) in entries) {
+                zos.putNextEntry(ZipEntry(name))
+                zos.write(xml.toByteArray(Charsets.UTF_8))
+                zos.closeEntry()
+            }
         }
-        zos.close()
         return baos.toByteArray()
     }
 
@@ -252,6 +232,163 @@ class MainActivity : AppCompatActivity() {
         binding.tvSaveStatus.text = msg
     }
 
+    // ──────────────────────────── STUDY TAB ────────────────────────────
+
+    private fun setupStudyTab() {
+        binding.btnPickFile.setOnClickListener {
+            filePicker.launch(arrayOf(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-excel",
+                "*/*"
+            ))
+        }
+    }
+
+    private fun refreshStudyTab() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val learning = vocabDb.dao().getLearning().map { it.toCard() }
+            val learned  = vocabDb.dao().getLearned().map { it.toCard() }
+            val wrong    = vocabDb.dao().getWrong().map { it.toCard() }
+            withContext(Dispatchers.Main) {
+                updateStartButtons(learning, learned, wrong)
+            }
+        }
+    }
+
+    private fun updateStartButtons(
+        learning: List<VocabCard>,
+        learned: List<VocabCard>,
+        wrong: List<VocabCard>
+    ) {
+        val hasCards = learning.isNotEmpty() || learned.isNotEmpty()
+
+        if (!hasCards) {
+            binding.tvStatus.text = "Import an Excel file with a sheet named Focus"
+            binding.btnStartAll.visibility      = View.GONE
+            binding.btnStartComplete.visibility = View.GONE
+            binding.btnStartWrong.visibility    = View.GONE
+            binding.btnClearWrong.visibility    = View.GONE
+            binding.btnClearLearned.visibility  = View.GONE
+            return
+        }
+
+        // Learning list
+        binding.btnStartAll.visibility = View.VISIBLE
+        val learningLabel = if (learned.isEmpty()) "Start all" else "Start learning"
+        binding.btnStartAll.text = "$learningLabel  (${learning.size})"
+        binding.btnStartAll.setOnClickListener {
+            if (learning.isEmpty()) return@setOnClickListener
+            openCards(learning)
+        }
+
+        // Complete list
+        if (learned.isNotEmpty()) {
+            binding.btnStartComplete.visibility = View.VISIBLE
+            binding.btnStartComplete.text = "Review complete  (${learned.size})"
+            binding.btnStartComplete.setOnClickListener { openCards(learned, learnedMode = true) }
+            binding.btnClearLearned.visibility = View.VISIBLE
+            binding.btnClearLearned.setOnClickListener {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    vocabDb.dao().clearAllLearned()
+                    withContext(Dispatchers.Main) { refreshStudyTab() }
+                }
+            }
+        } else {
+            binding.btnStartComplete.visibility = View.GONE
+            binding.btnClearLearned.visibility  = View.GONE
+        }
+
+        // Wrong cards
+        if (wrong.isNotEmpty()) {
+            binding.btnStartWrong.visibility = View.VISIBLE
+            binding.btnStartWrong.text = "Review wrong  (${wrong.size})"
+            binding.btnStartWrong.setOnClickListener { openCards(wrong, wrongOnly = true) }
+            binding.btnClearWrong.visibility = View.VISIBLE
+            binding.btnClearWrong.setOnClickListener {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    vocabDb.dao().clearAllWrong()
+                    withContext(Dispatchers.Main) { refreshStudyTab() }
+                }
+            }
+        } else {
+            binding.btnStartWrong.visibility = View.GONE
+            binding.btnClearWrong.visibility = View.GONE
+        }
+
+        val total = learning.size + learned.size
+        binding.tvStatus.text = "$total cards in deck"
+    }
+
+    private fun openCards(
+        cards: List<VocabCard>,
+        wrongOnly: Boolean = false,
+        learnedMode: Boolean = false
+    ) {
+        val intent = Intent(this, CardActivity::class.java)
+        intent.putExtra(CardActivity.EXTRA_CARDS,        ArrayList(cards))
+        intent.putExtra(CardActivity.EXTRA_WRONG_ONLY,   wrongOnly)
+        intent.putExtra(CardActivity.EXTRA_LEARNED_MODE, learnedMode)
+        startActivity(intent)
+    }
+
+    // ──────────────────────────── EXCEL IMPORT ────────────────────────────
+
+    private fun importFromExcel(uri: Uri) {
+        binding.progressBar.visibility = View.VISIBLE
+        binding.btnPickFile.isEnabled  = false
+        binding.tvStatus.text = "Parsing Excel…"
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val stream = contentResolver.openInputStream(uri)
+                    ?: throw IllegalStateException("Cannot open file")
+                val cards = ExcelParser.parse(stream)
+                stream.close()
+
+                if (cards.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        binding.progressBar.visibility = View.GONE
+                        binding.btnPickFile.isEnabled  = true
+                        binding.tvStatus.text = "No cards found — check sheet is named Focus"
+                    }
+                    return@launch
+                }
+
+                // Smart merge: preserve learned/wrong for cards that already exist (match by word)
+                val existing = vocabDb.dao().getAll().associateBy { it.word }
+                val entities = cards.map { card ->
+                    val prev = existing[card.word]
+                    card.toEntity().copy(
+                        learned     = prev?.learned     ?: false,
+                        markedWrong = prev?.markedWrong ?: false
+                    )
+                }
+                vocabDb.dao().clearAll()
+                vocabDb.dao().insertAll(entities)
+
+                val learning = vocabDb.dao().getLearning().map { it.toCard() }
+                val learned  = vocabDb.dao().getLearned().map { it.toCard() }
+                val wrong    = vocabDb.dao().getWrong().map { it.toCard() }
+
+                withContext(Dispatchers.Main) {
+                    binding.progressBar.visibility = View.GONE
+                    binding.btnPickFile.isEnabled  = true
+                    val name = resolveFileName(uri)
+                    val label = if (name.isNotBlank()) "$name  ·  " else ""
+                    binding.tvStatus.text = "${label}${cards.size} cards imported"
+                    updateStartButtons(learning, learned, wrong)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    binding.progressBar.visibility = View.GONE
+                    binding.btnPickFile.isEnabled  = true
+                    binding.tvStatus.text = "Import error: ${e.message}"
+                    Toast.makeText(this@MainActivity, "Failed to parse file", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     private fun resolveFileName(uri: Uri): String {
         var name = ""
         try {
@@ -261,116 +398,5 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (_: Exception) {}
         return name
-    }
-
-    private fun loadFile(uri: Uri, onFailure: (() -> Unit)? = null) {
-        binding.progressBar.visibility = View.VISIBLE
-        binding.btnPickFile.isEnabled  = false
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val stream = contentResolver.openInputStream(uri)
-                    ?: throw IllegalStateException("Cannot open file")
-                val cards = ExcelParser.parse(stream)
-                stream.close()
-
-                withContext(Dispatchers.Main) {
-                    binding.progressBar.visibility = View.GONE
-                    binding.btnPickFile.isEnabled  = true
-
-                    if (cards.isEmpty()) {
-                        binding.tvStatus.text = "No cards found. Make sure the sheet is named Focus."
-                        return@withContext
-                    }
-
-                    loadedCards = cards
-                    val name = WrongCardStore.loadLastFileName(this@MainActivity)
-                    binding.tvStatus.text =
-                        if (name.isNotBlank()) "$name  ·  ${cards.size} cards"
-                        else "${cards.size} cards loaded"
-
-                    updateStartButtons()
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    binding.progressBar.visibility = View.GONE
-                    binding.btnPickFile.isEnabled  = true
-                    if (onFailure != null) onFailure()
-                    else {
-                        binding.tvStatus.text = "Error: ${e.message}"
-                        Toast.makeText(this@MainActivity, "Failed to parse file", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }
-    }
-
-    private fun updateStartButtons() {
-        val wrongIndices   = WrongCardStore.load(this)
-        val learnedIndices = LearnedCardStore.load(this)
-
-        val allIndices      = loadedCards.indices.toList()
-        val learningIndices = allIndices.filter { it !in learnedIndices }
-        val completeIndices = allIndices.filter { it in learnedIndices }
-
-        // Start learning button (primary — always visible when cards are loaded)
-        binding.btnStartAll.visibility = View.VISIBLE
-        val learningLabel = if (completeIndices.isEmpty()) "Start all" else "Start learning"
-        binding.btnStartAll.text = "$learningLabel  (${learningIndices.size})"
-        binding.btnStartAll.setOnClickListener {
-            if (learningIndices.isEmpty()) return@setOnClickListener
-            openCards(learningIndices)
-        }
-
-        // Review complete list
-        if (completeIndices.isNotEmpty()) {
-            binding.btnStartComplete.visibility = View.VISIBLE
-            binding.btnStartComplete.text = "Review complete  (${completeIndices.size})"
-            binding.btnStartComplete.setOnClickListener {
-                openCards(completeIndices, learnedMode = true)
-            }
-            binding.btnClearLearned.visibility = View.VISIBLE
-            binding.btnClearLearned.setOnClickListener {
-                LearnedCardStore.clear(this)
-                updateStartButtons()
-            }
-        } else {
-            binding.btnStartComplete.visibility = View.GONE
-            binding.btnClearLearned.visibility = View.GONE
-        }
-
-        // Review wrong cards
-        if (wrongIndices.isNotEmpty()) {
-            binding.btnStartWrong.visibility = View.VISIBLE
-            binding.btnStartWrong.text = "Review wrong  (${wrongIndices.size})"
-            binding.btnStartWrong.setOnClickListener {
-                val valid = wrongIndices.filter { it < loadedCards.size }
-                if (valid.isEmpty()) {
-                    binding.btnStartWrong.visibility = View.GONE
-                    binding.btnClearWrong.visibility = View.GONE
-                    return@setOnClickListener
-                }
-                openCards(valid, wrongOnly = true)
-            }
-            binding.btnClearWrong.visibility = View.VISIBLE
-            binding.btnClearWrong.setOnClickListener {
-                WrongCardStore.clear(this)
-                binding.btnStartWrong.visibility = View.GONE
-                binding.btnClearWrong.visibility = View.GONE
-            }
-        } else {
-            binding.btnStartWrong.visibility = View.GONE
-            binding.btnClearWrong.visibility = View.GONE
-        }
-    }
-
-    private fun openCards(indices: List<Int>, wrongOnly: Boolean = false, learnedMode: Boolean = false) {
-        val intent = Intent(this, CardActivity::class.java)
-        intent.putExtra(CardActivity.EXTRA_CARDS, ArrayList(indices.map { loadedCards[it] }))
-        intent.putExtra(CardActivity.EXTRA_WRONG_ONLY, wrongOnly)
-        intent.putExtra(CardActivity.EXTRA_WRONG_INDICES, indices.toIntArray())
-        intent.putExtra(CardActivity.EXTRA_CARD_INDICES,  indices.toIntArray())
-        intent.putExtra(CardActivity.EXTRA_LEARNED_MODE,  learnedMode)
-        startActivity(intent)
     }
 }
