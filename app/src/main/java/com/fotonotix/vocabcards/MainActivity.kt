@@ -13,8 +13,6 @@ import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.tabs.TabLayout
@@ -35,20 +33,6 @@ class MainActivity : AppCompatActivity() {
     private val clipboardDb by lazy { ClipboardDatabase.get(this) }
     private val vocabDb     by lazy { VocabDatabase.get(this) }
 
-    private val filePicker = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            } catch (_: Exception) {}
-            importFromExcel(uri)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -56,7 +40,6 @@ class MainActivity : AppCompatActivity() {
 
         setupTabs()
         setupClipboardTab()
-        setupStudyTab()
     }
 
     override fun onResume() {
@@ -234,16 +217,6 @@ class MainActivity : AppCompatActivity() {
 
     // ──────────────────────────── STUDY TAB ────────────────────────────
 
-    private fun setupStudyTab() {
-        binding.btnPickFile.setOnClickListener {
-            filePicker.launch(arrayOf(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "application/vnd.ms-excel",
-                "*/*"
-            ))
-        }
-    }
-
     private fun refreshStudyTab() {
         lifecycleScope.launch(Dispatchers.IO) {
             val learning  = vocabDb.dao().getLearning().map { it.toCard() }
@@ -359,73 +332,4 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    // ──────────────────────────── EXCEL IMPORT ────────────────────────────
-
-    private fun importFromExcel(uri: Uri) {
-        binding.progressBar.visibility = View.VISIBLE
-        binding.btnPickFile.isEnabled  = false
-        binding.tvStatus.text = "Parsing Excel…"
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val stream = contentResolver.openInputStream(uri)
-                    ?: throw IllegalStateException("Cannot open file")
-                val cards = ExcelParser.parse(stream)
-                stream.close()
-
-                if (cards.isEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        binding.progressBar.visibility = View.GONE
-                        binding.btnPickFile.isEnabled  = true
-                        binding.tvStatus.text = "No cards found — check sheet is named Focus"
-                    }
-                    return@launch
-                }
-
-                // Smart merge: preserve learned/wrong for cards that already exist (match by word)
-                val existing = vocabDb.dao().getAll().associateBy { it.word }
-                val entities = cards.map { card ->
-                    val prev = existing[card.word]
-                    card.toEntity().copy(
-                        learned     = prev?.learned     ?: false,
-                        markedWrong = prev?.markedWrong ?: false
-                    )
-                }
-                vocabDb.dao().clearAll()
-                vocabDb.dao().insertAll(entities)
-
-                val learning  = vocabDb.dao().getLearning().map { it.toCard() }
-                val learned   = vocabDb.dao().getLearned().map { it.toCard() }
-                val wrong     = vocabDb.dao().getWrong().map { it.toCard() }
-                val archived  = vocabDb.dao().countArchived()
-
-                withContext(Dispatchers.Main) {
-                    binding.progressBar.visibility = View.GONE
-                    binding.btnPickFile.isEnabled  = true
-                    val name = resolveFileName(uri)
-                    val label = if (name.isNotBlank()) "$name  ·  " else ""
-                    binding.tvStatus.text = "${label}${cards.size} cards imported"
-                    updateStartButtons(learning, learned, wrong, archived)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    binding.progressBar.visibility = View.GONE
-                    binding.btnPickFile.isEnabled  = true
-                    binding.tvStatus.text = "Import error: ${e.message}"
-                    Toast.makeText(this@MainActivity, "Failed to parse file", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun resolveFileName(uri: Uri): String {
-        var name = ""
-        try {
-            contentResolver.query(uri, null, null, null, null)?.use { c ->
-                val col = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (c.moveToFirst() && col >= 0) name = c.getString(col)
-            }
-        } catch (_: Exception) {}
-        return name
-    }
 }
