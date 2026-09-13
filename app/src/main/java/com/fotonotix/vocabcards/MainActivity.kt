@@ -4,8 +4,10 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.view.View
 import android.os.Bundle
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.tabs.TabLayout
@@ -16,6 +18,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
+
+    companion object { private const val TAG = "VocardmemDB" }
 
     private lateinit var binding: ActivityMainBinding
 
@@ -181,8 +185,29 @@ class MainActivity : AppCompatActivity() {
                 .setMessage("${learned.size} mastered word(s) will be archived. The deck clears and is ready for a new batch.")
                 .setPositiveButton("Move") { _, _ ->
                     lifecycleScope.launch(Dispatchers.IO) {
-                        vocabDb.dao().archiveAllLearned()
-                        withContext(Dispatchers.Main) { refreshStudyTab() }
+                        try {
+                            val beforeLearning = vocabDb.dao().getLearning().size
+                            val beforeLearned  = vocabDb.dao().getLearned().size
+                            val beforeArchived = vocabDb.dao().countArchived()
+                            Log.d(TAG, "archiveAll: START  learning=$beforeLearning  learned=$beforeLearned  archived=$beforeArchived")
+
+                            vocabDb.dao().archiveAllLearned()
+
+                            val afterLearning = vocabDb.dao().getLearning().size
+                            val afterLearned  = vocabDb.dao().getLearned().size
+                            val afterArchived = vocabDb.dao().countArchived()
+                            Log.d(TAG, "archiveAll: DONE   learning=$afterLearning  learned=$afterLearned  archived=$afterArchived")
+
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@MainActivity, "$beforeLearned word(s) archived", Toast.LENGTH_SHORT).show()
+                                refreshStudyTab()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "archiveAll: FAILED  ${e.javaClass.simpleName}: ${e.message}", e)
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@MainActivity, "Archive failed: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     }
                 }
                 .setNegativeButton("Cancel", null)
