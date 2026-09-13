@@ -216,10 +216,20 @@
             android:visibility="gone" />
 
         <Button
+            android:id="@+id/btnArchiveAll"
+            android:layout_width="match_parent"
+            android:layout_height="80dp"
+            android:text="Move all to database"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone" />
+
+        <Button
             android:id="@+id/btnClearLearned"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Reset learned list"
+            android:text="Reset mastered"
             android:textSize="15sp"
             android:layout_marginBottom="16dp"
             style="@style/Widget.Material3.Button.OutlinedButton"

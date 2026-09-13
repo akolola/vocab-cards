@@ -246,11 +246,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshStudyTab() {
         lifecycleScope.launch(Dispatchers.IO) {
-            val learning = vocabDb.dao().getLearning().map { it.toCard() }
-            val learned  = vocabDb.dao().getLearned().map { it.toCard() }
-            val wrong    = vocabDb.dao().getWrong().map { it.toCard() }
+            val learning  = vocabDb.dao().getLearning().map { it.toCard() }
+            val learned   = vocabDb.dao().getLearned().map { it.toCard() }
+            val wrong     = vocabDb.dao().getWrong().map { it.toCard() }
+            val archived  = vocabDb.dao().countArchived()
             withContext(Dispatchers.Main) {
-                updateStartButtons(learning, learned, wrong)
+                updateStartButtons(learning, learned, wrong, archived)
             }
         }
     }
@@ -258,33 +259,64 @@ class MainActivity : AppCompatActivity() {
     private fun updateStartButtons(
         learning: List<VocabCard>,
         learned: List<VocabCard>,
-        wrong: List<VocabCard>
+        wrong: List<VocabCard>,
+        archived: Int
     ) {
-        val hasCards = learning.isNotEmpty() || learned.isNotEmpty()
+        val hasActive = learning.isNotEmpty() || learned.isNotEmpty()
 
-        if (!hasCards) {
-            binding.tvStatus.text = "Import an Excel file with a sheet named Focus"
+        if (!hasActive) {
+            val archivedNote = if (archived > 0) "$archived words mastered total" else "No active deck — ask Claude to check clipboard"
+            binding.tvStatus.text = archivedNote
             binding.btnStartAll.visibility      = View.GONE
             binding.btnStartComplete.visibility = View.GONE
             binding.btnStartWrong.visibility    = View.GONE
             binding.btnClearWrong.visibility    = View.GONE
             binding.btnClearLearned.visibility  = View.GONE
+            binding.btnArchiveAll.visibility    = View.GONE
             return
         }
 
-        // Learning list
+        // Status
+        val total = learning.size + learned.size
+        val archivedSuffix = if (archived > 0) "  ·  $archived mastered" else ""
+        binding.tvStatus.text = "$total cards in deck$archivedSuffix"
+
+        // Start learning (sublist: not yet learned)
         binding.btnStartAll.visibility = View.VISIBLE
         val learningLabel = if (learned.isEmpty()) "Start all" else "Start learning"
         binding.btnStartAll.text = "$learningLabel  (${learning.size})"
+        binding.btnStartAll.isEnabled = learning.isNotEmpty()
+        binding.btnStartAll.alpha = if (learning.isEmpty()) 0.4f else 1.0f
         binding.btnStartAll.setOnClickListener {
             if (learning.isEmpty()) return@setOnClickListener
             openCards(learning)
         }
 
-        // Complete list
+        // Move all to database — only when sublist is empty (everything mastered)
+        if (learning.isEmpty() && learned.isNotEmpty()) {
+            binding.btnArchiveAll.visibility = View.VISIBLE
+            binding.btnArchiveAll.text = "Move all to database  (${learned.size})"
+            binding.btnArchiveAll.setOnClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle("Move all to database?")
+                    .setMessage("${learned.size} mastered word(s) will be archived. The deck clears and is ready for a new batch.")
+                    .setPositiveButton("Move") { _, _ ->
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            vocabDb.dao().archiveAllLearned()
+                            withContext(Dispatchers.Main) { refreshStudyTab() }
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        } else {
+            binding.btnArchiveAll.visibility = View.GONE
+        }
+
+        // Review mastered
         if (learned.isNotEmpty()) {
             binding.btnStartComplete.visibility = View.VISIBLE
-            binding.btnStartComplete.text = "Review complete  (${learned.size})"
+            binding.btnStartComplete.text = "Review mastered  (${learned.size})"
             binding.btnStartComplete.setOnClickListener { openCards(learned, learnedMode = true) }
             binding.btnClearLearned.visibility = View.VISIBLE
             binding.btnClearLearned.setOnClickListener {
@@ -314,9 +346,6 @@ class MainActivity : AppCompatActivity() {
             binding.btnStartWrong.visibility = View.GONE
             binding.btnClearWrong.visibility = View.GONE
         }
-
-        val total = learning.size + learned.size
-        binding.tvStatus.text = "$total cards in deck"
     }
 
     private fun openCards(
@@ -366,9 +395,10 @@ class MainActivity : AppCompatActivity() {
                 vocabDb.dao().clearAll()
                 vocabDb.dao().insertAll(entities)
 
-                val learning = vocabDb.dao().getLearning().map { it.toCard() }
-                val learned  = vocabDb.dao().getLearned().map { it.toCard() }
-                val wrong    = vocabDb.dao().getWrong().map { it.toCard() }
+                val learning  = vocabDb.dao().getLearning().map { it.toCard() }
+                val learned   = vocabDb.dao().getLearned().map { it.toCard() }
+                val wrong     = vocabDb.dao().getWrong().map { it.toCard() }
+                val archived  = vocabDb.dao().countArchived()
 
                 withContext(Dispatchers.Main) {
                     binding.progressBar.visibility = View.GONE
@@ -376,7 +406,7 @@ class MainActivity : AppCompatActivity() {
                     val name = resolveFileName(uri)
                     val label = if (name.isNotBlank()) "$name  ·  " else ""
                     binding.tvStatus.text = "${label}${cards.size} cards imported"
-                    updateStartButtons(learning, learned, wrong)
+                    updateStartButtons(learning, learned, wrong, archived)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

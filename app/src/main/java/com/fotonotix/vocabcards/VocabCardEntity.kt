@@ -15,6 +15,7 @@ data class VocabCardEntity(
     val subsection: String,
     val learned: Boolean = false,
     @ColumnInfo(name = "marked_wrong") val markedWrong: Boolean = false,
+    val archived: Boolean = false,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
 ) {
     fun toCard() = VocabCard(
