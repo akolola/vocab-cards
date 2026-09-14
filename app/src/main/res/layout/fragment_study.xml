@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background"
+    android:gravity="center"
+    android:padding="32dp">
+
+    <ProgressBar
+        android:id="@+id/progressBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="32dp"
+        android:gravity="center"
+        android:textSize="14sp"
+        android:textColor="@color/text_secondary"
+        android:text="Loading…" />
+
+    <Button
+        android:id="@+id/btnStartAll"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:text="Start all"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnArchiveAll"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:text="Move all to database"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnStartComplete"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:text="Review mastered"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnStartWrong"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:text="Review wrong"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_marginBottom="8dp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnClearWrong"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Clear wrong list"
+        android:textSize="15sp"
+        android:layout_marginBottom="8dp"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnClearLearned"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Reset mastered"
+        android:textSize="15sp"
+        android:layout_marginBottom="16dp"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:visibility="gone" />
+
+</LinearLayout>
