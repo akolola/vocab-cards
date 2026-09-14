@@ -79,11 +79,13 @@ class MainActivity : AppCompatActivity() {
                 if (text.isEmpty()) {
                     binding.tvLangDetected.text = "—"
                     binding.btnSaveWord.isEnabled = false
+                    binding.btnSaveWord.alpha = 1.0f
                     binding.tvSaveStatus.text = ""
                 } else {
                     val russian = ExcelWriter.isRussian(text)
                     binding.tvLangDetected.text = if (russian) "Russian" else "German"
                     binding.btnSaveWord.isEnabled = true
+                    binding.btnSaveWord.alpha = 1.0f
                     binding.tvSaveStatus.text = ""
                     val runnable = Runnable { checkDuplicate(text) }
                     dupCheckRunnable = runnable
@@ -117,14 +119,19 @@ class MainActivity : AppCompatActivity() {
             val inClipboard = clipboardDb.dao().countByWord(word) > 0
             val inVocab     = vocabDb.dao().findByWord(word)  // null=not found, false=active, true=archived
             val msg = when {
-                inClipboard          -> "Already saved in clipboard"
-                inVocab == false     -> "Already in study deck"
-                inVocab == true      -> "Already mastered"
-                else                 -> ""
+                inVocab == true  -> "Already mastered — not saving again"
+                inVocab == false -> "In current study deck"
+                inClipboard      -> "Already in clipboard"
+                else             -> ""
             }
+            val blocked = inVocab == true
             withContext(Dispatchers.Main) {
                 if (binding.etWord.text?.toString()?.trim() == word) {
                     binding.tvSaveStatus.text = msg
+                    if (blocked) {
+                        binding.btnSaveWord.isEnabled = false
+                        binding.btnSaveWord.alpha = 0.4f
+                    }
                 }
             }
         }
