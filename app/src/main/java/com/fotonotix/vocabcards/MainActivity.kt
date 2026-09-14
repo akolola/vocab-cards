@@ -2,11 +2,13 @@ package com.fotonotix.vocabcards
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
 import android.view.View
-import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -22,6 +24,8 @@ class MainActivity : AppCompatActivity() {
     companion object { private const val TAG = "VocardmemDB" }
 
     private lateinit var binding: ActivityMainBinding
+    private val dupCheckHandler = Handler(Looper.getMainLooper())
+    private var dupCheckRunnable: Runnable? = null
 
     private val clipboardDb by lazy { ClipboardDatabase.get(this) }
     private val vocabDb     by lazy { VocabDatabase.get(this) }
@@ -71,15 +75,20 @@ class MainActivity : AppCompatActivity() {
         binding.etWord.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
                 val text = s?.toString()?.trim() ?: ""
+                dupCheckRunnable?.let { dupCheckHandler.removeCallbacks(it) }
                 if (text.isEmpty()) {
                     binding.tvLangDetected.text = "—"
                     binding.btnSaveWord.isEnabled = false
+                    binding.tvSaveStatus.text = ""
                 } else {
                     val russian = ExcelWriter.isRussian(text)
                     binding.tvLangDetected.text = if (russian) "Russian" else "German"
                     binding.btnSaveWord.isEnabled = true
+                    binding.tvSaveStatus.text = ""
+                    val runnable = Runnable { checkDuplicate(text) }
+                    dupCheckRunnable = runnable
+                    dupCheckHandler.postDelayed(runnable, 500)
                 }
-                binding.tvSaveStatus.text = ""
             }
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
@@ -99,6 +108,24 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 binding.tvSaveStatus.text = "Saved: \"$word\""
                 binding.etWord.text?.clear()
+            }
+        }
+    }
+
+    private fun checkDuplicate(word: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val inClipboard = clipboardDb.dao().countByWord(word) > 0
+            val inVocab     = vocabDb.dao().findByWord(word)  // null=not found, false=active, true=archived
+            val msg = when {
+                inClipboard          -> "Already saved in clipboard"
+                inVocab == false     -> "Already in study deck"
+                inVocab == true      -> "Already mastered"
+                else                 -> ""
+            }
+            withContext(Dispatchers.Main) {
+                if (binding.etWord.text?.toString()?.trim() == word) {
+                    binding.tvSaveStatus.text = msg
+                }
             }
         }
     }

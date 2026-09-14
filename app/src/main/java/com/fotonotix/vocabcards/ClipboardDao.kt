@@ -16,6 +16,9 @@ interface ClipboardDao {
     @Query("SELECT COUNT(*) FROM clipboard_words")
     fun countFlow(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM clipboard_words WHERE lower(text) = lower(:word)")
+    suspend fun countByWord(word: String): Int
+
     @Query("DELETE FROM clipboard_words")
     suspend fun clearAll()
 }

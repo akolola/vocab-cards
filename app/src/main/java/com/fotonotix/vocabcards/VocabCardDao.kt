@@ -48,6 +48,9 @@ interface VocabCardDao {
     @Query("DELETE FROM vocab_cards WHERE archived = 0")
     suspend fun clearActive()
 
+    @Query("SELECT archived FROM vocab_cards WHERE lower(word) = lower(:word) LIMIT 1")
+    suspend fun findByWord(word: String): Boolean?
+
     @Query("DELETE FROM vocab_cards")
     suspend fun clearAll()
 }
